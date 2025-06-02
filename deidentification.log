@@ -1,0 +1,77 @@
+2025-06-02 11:56:30,273 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 11:56:30,308 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 11:56:31,095 - ERROR - Ошибка при обработке input\result_95833749.pdf: Unable to get page count. Is poppler installed and in PATH?
+2025-06-02 12:22:45,188 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:22:45,226 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:22:45,916 - ERROR - Ошибка при обработке input\result_95833749.pdf: Unable to get page count. Is poppler installed and in PATH?
+2025-06-02 12:24:11,609 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:24:11,636 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:24:13,785 - ERROR - Ошибка при обработке input\result_95833749.pdf: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-02 12:26:50,744 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:26:50,769 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:29:08,894 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:29:08,922 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:29:10,637 - ERROR - Ошибка при обработке input\result_95833749.pdf: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-02 12:32:16,977 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:32:17,001 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:32:18,812 - ERROR - Ошибка при обработке input\result_95833749.pdf: tesseract is not installed or it's not in your PATH. See README file for more information.
+2025-06-02 12:32:30,863 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:32:30,887 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:32:32,841 - ERROR - Ошибка при обработке input\result_95833749.pdf: (1, 'Error opening data file C:\\Program Files\\Tesseract-OCR/tessdata/rus.traineddata Please make sure the TESSDATA_PREFIX environment variable is set to your "tessdata" directory. Failed loading language \'rus\' Tesseract couldn\'t load any languages! Could not initialize tesseract.')
+2025-06-02 12:47:59,065 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:47:59,081 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:48:01,171 - ERROR - Ошибка при обработке input\result_95833749.pdf: (1, 'Error opening data file C:\\Program Files\\Tesseract-OCR/tessdata/rus.traineddata Please make sure the TESSDATA_PREFIX environment variable is set to your "tessdata" directory. Failed loading language \'rus\' Tesseract couldn\'t load any languages! Could not initialize tesseract.')
+2025-06-02 12:56:33,323 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 12:56:33,354 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 12:56:37,338 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 13:45:32,045 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 13:45:32,069 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 13:45:36,161 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 13:55:58,798 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 13:55:58,830 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 13:56:02,700 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 14:26:09,058 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 14:26:09,098 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 14:26:13,488 - ERROR - Ошибка при обработке input\result_95833749.pdf: 'Match' object has no attribute 'span'
+2025-06-02 14:27:07,032 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 14:27:07,057 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 14:27:11,438 - ERROR - Ошибка при обработке input\result_95833749.pdf: 'Match' object has no attribute 'span'
+2025-06-02 14:29:47,208 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 14:29:47,233 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 14:29:51,410 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 17:27:14,345 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 17:27:14,380 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 17:27:18,749 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 18:40:37,792 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 18:40:37,820 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 18:40:42,335 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 18:42:06,052 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 18:42:06,075 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 18:42:10,356 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 18:44:47,218 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 18:44:47,244 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 18:44:47,894 - WARNING - Не удалось загрузить DeepPavlov: No module named 'deeppavlov'
+2025-06-02 18:44:47,894 - WARNING - Не удалось загрузить Yargy: No module named 'yargy.extractors'
+2025-06-02 18:44:51,492 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 18:45:38,856 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 18:45:38,884 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 18:45:39,525 - WARNING - Не удалось загрузить DeepPavlov: No module named 'deeppavlov'
+2025-06-02 18:45:39,525 - WARNING - Не удалось загрузить Yargy: No module named 'yargy.extractors'
+2025-06-02 18:45:43,147 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 18:46:00,699 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 18:46:00,724 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 18:46:01,317 - WARNING - Не удалось загрузить DeepPavlov: No module named 'deeppavlov'
+2025-06-02 18:46:01,317 - WARNING - Не удалось загрузить Yargy: No module named 'yargy.extractors'
+2025-06-02 18:46:04,806 - INFO - Успешно обработан файл: input\result_95833749.pdf
+2025-06-02 18:56:47,886 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 18:56:47,913 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 18:56:49,640 - INFO - Downloading from http://files.deeppavlov.ai/v1/ner/ner_ontonotes_bert_mult_torch_crf.tar.gz to C:\Users\Администратор\.deeppavlov\models\ner_ontonotes_bert_mult_torch_crf.tar.gz
+2025-06-02 19:01:13,754 - INFO - Loading dictionaries from C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\pymorphy2_dicts_ru\data
+2025-06-02 19:01:13,780 - INFO - format: 2.4, revision: 417127, updated: 2020-10-11T15:05:51.070345
+2025-06-02 19:01:15,890 - INFO - Downloading from http://files.deeppavlov.ai/v1/ner/ner_ontonotes_bert_mult_torch_crf.tar.gz to C:\Users\Администратор\.deeppavlov\models\ner_ontonotes_bert_mult_torch_crf.tar.gz
+2025-06-02 19:01:16,246 - WARNING - Found a partial download C:\Users\Администратор\.deeppavlov\models\ner_ontonotes_bert_mult_torch_crf.tar.gz.part
+2025-06-02 19:01:16,251 - WARNING - Download stopped abruptly, trying to resume from 179666944 to reach 1385236806
+2025-06-02 19:01:58,221 - INFO - Extracting C:\Users\Администратор\.deeppavlov\models\ner_ontonotes_bert_mult_torch_crf.tar.gz archive into C:\Users\Администратор\.deeppavlov\models\ner_ontonotes_torch_bert_mult_crf
+2025-06-02 19:02:13,967 - WARNING - Не удалось загрузить DeepPavlov: No module named 'torch'
+2025-06-02 19:02:13,967 - WARNING - Не удалось загрузить Yargy: cannot import name 'FactExtractor' from 'yargy.interpretation' (C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\venv\lib\site-packages\yargy\interpretation\__init__.py)
+2025-06-02 19:02:17,754 - INFO - Успешно обработан файл: input\result_95833749.pdf
