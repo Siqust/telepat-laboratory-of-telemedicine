@@ -4,15 +4,47 @@ from typing import Dict, List, Tuple, Optional
 import cv2
 import numpy as np
 import pytesseract
-from natasha import Doc, NewsNERTagger, NewsEmbedding
 import logging
-from .database import Database  # Добавляем импорт Database
-import uuid # Добавляем импорт uuid
-from src import utils # Изменяем относительный импорт на абсолютный
-
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+from src.database import Database
+import uuid
+from src import utils
+import torch
+import stanza
+import requests
+from bs4 import BeautifulSoup
+import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Словарь для транслитерации
+TRANSLIT_DICT = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+    'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+    'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E',
+    'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+    'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+    'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sch',
+    'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+}
+
+def transliterate(text: str) -> str:
+    """
+    Транслитерирует русский текст в латиницу
+    
+    Args:
+        text: текст для транслитерации
+        
+    Returns:
+        str: транслитерированный текст
+    """
+    result = []
+    for char in text:
+        result.append(TRANSLIT_DICT.get(char, char))
+    return ''.join(result)
 
 class DocumentProcessor:
     """Класс для обработки медицинских документов"""
@@ -26,14 +58,47 @@ class DocumentProcessor:
         """
         self.db = db
 
-        # Инициализация модели Natasha для NER
-        logger.info("Загрузка модели Natasha для NER...")
-        self.ner_tagger = NewsNERTagger(NewsEmbedding())
-        logger.info("Модель Natasha успешно загружена.")
+        # Загрузка базы медицинских терминов
+        self.medical_terms = set()
+        self._load_medical_terms()
+
+        # Инициализация моделей Stanza для определения имен
+        logger.info("Загрузка моделей Stanza для определения имен...")
+        try:
+            # Загружаем английскую модель
+            logger.info("Загрузка английской модели Stanza...")
+            stanza.download('en')
+            self.nlp_en = stanza.Pipeline('en', processors='tokenize,ner')
+            logger.info("Английская модель Stanza успешно загружена")
+            
+            # Загружаем русскую модель
+            logger.info("Загрузка русской модели Stanza...")
+            stanza.download('ru')
+            self.nlp_ru = stanza.Pipeline('ru', processors='tokenize,ner')
+            logger.info("Русская модель Stanza успешно загружена")
+            
+            # Тестируем модели
+            test_text_en = "John Smith works at the hospital"
+            test_text_ru = "Иванов работает в больнице Петрова"
+            
+            doc_en = self.nlp_en(test_text_en)
+            test_names_en = [ent.text for ent in doc_en.ents if ent.type == "PERSON"]
+            logger.info(f"Тест английской модели: найдены имена {test_names_en}")
+            
+            doc_ru = self.nlp_ru(test_text_ru)
+            test_names_ru = [ent.text for ent in doc_ru.ents if ent.type == "PERSON"]
+            logger.info(f"Тест русской модели: найдены имена {test_names_ru}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке моделей Stanza: {str(e)}")
+            logger.exception("Полный стек ошибки:")
+            self.nlp_en = None
+            self.nlp_ru = None
 
         # Загрузка базы русских фамилий
         logger.info("Загрузка базы русских фамилий...")
         self.russian_surnames = set()
+        self.translit_surnames = set()
         try:
             surnames_path = os.path.join(os.path.dirname(__file__), 'data', 'russian_surnames.txt')
             logger.info(f"Полный путь к файлу фамилий: {os.path.abspath(surnames_path)}")
@@ -65,18 +130,27 @@ class DocumentProcessor:
                                 for line in f:
                                     line = line.strip()
                                     if line:
-                                        surnames.add(line.lower())
+                                        surname_lower = line.lower()
+                                        surnames.add(surname_lower)
+                                        # Добавляем транслитерированный вариант фамилии
+                                        self.translit_surnames.add(transliterate(surname_lower))
                                         line_count += 1
                                         if line_count <= 5:
-                                            logger.debug(f"Загружена фамилия: {line}")
+                                            logger.debug(f"Загружена фамилия: {line} -> {transliterate(line)}")
                                 
                                 self.russian_surnames = surnames
                                 logger.info(f"Успешно загружено {len(self.russian_surnames)} фамилий в кодировке {encoding}")
+                                logger.info(f"Создано {len(self.translit_surnames)} транслитерированных вариантов фамилий")
                                 
                                 # Проверяем несколько тестовых фамилий
-                                test_surnames = ['иванов', 'петров', 'сидоров']
+                                test_surnames = ['иванов', 'петров', 'сидоров', 'зингерман']
                                 for surname in test_surnames:
-                                    logger.info(f"Тестовая проверка фамилии '{surname}': {'найдена' if surname in self.russian_surnames else 'не найдена'} в базе")
+                                    found = surname.lower() in self.russian_surnames
+                                    translit = transliterate(surname.lower())
+                                    translit_found = translit in self.translit_surnames
+                                    logger.info(f"Тестовая проверка фамилии '{surname}':")
+                                    logger.info(f"- Русский вариант: {'найден' if found else 'не найден'}")
+                                    logger.info(f"- Транслит вариант '{translit}': {'найден' if translit_found else 'не найден'}")
                                 
                                 # Если успешно загрузили фамилии, прерываем цикл
                                 if self.russian_surnames:
@@ -446,56 +520,231 @@ class DocumentProcessor:
             # Добавьте другие нестандартные паттерны по мере необходимости
         }
 
+        # Добавляем список исключений - слов, которые совпадают с фамилиями, но не должны маскироваться
+        self.excluded_words = {
+            'москва', 'врач', 'доктор', 'профессор', 'доцент', 'ассистент', 'заведующий',
+            'главный', 'старший', 'младший', 'ведущий', 'научный', 'клинический',
+            'лаборатория', 'отделение', 'центр', 'клиника', 'больница', 'поликлиника',
+            'диспансер', 'санаторий', 'госпиталь', 'медицинский', 'научный', 'исследовательский',
+            'институт', 'университет', 'академия', 'колледж', 'училище', 'школа'
+        }
+
+        # Добавляем список префиксов, после которых не должно быть маскирования
+        self.excluded_prefixes = {
+            'врач:', 'доктор:', 'профессор:', 'доцент:', 'ассистент:', 'заведующий:',
+            'главный:', 'старший:', 'младший:', 'ведущий:', 'научный:', 'клинический:',
+            'лаборатория:', 'отделение:', 'центр:', 'клиника:', 'больница:', 'поликлиника:',
+            'диспансер:', 'санаторий:', 'госпиталь:', 'медицинский:', 'научный:', 'исследовательский:',
+            'институт:', 'университет:', 'академия:', 'колледж:', 'училище:', 'школа:'
+        }
+
+        # Паттерны для числовых персональных данных
+        self.numeric_patterns = {
+            'oms': {
+                'length': 16,  # Полис ОМС: 16 цифр
+                'pattern': r'^\d{16}$',
+                'description': 'Полис ОМС'
+            },
+            'snils': {
+                'length': 11,  # СНИЛС: 11 цифр (без дефисов)
+                'pattern': r'^\d{11}$',
+                'description': 'СНИЛС'
+            },
+            'passport': {
+                'length': 10,  # Паспорт: 10 цифр (серия + номер)
+                'pattern': r'^\d{10}$',
+                'description': 'Паспорт'
+            },
+            'birth_certificate': {
+                'length': 11,  # Свидетельство о рождении: 11 цифр (римские цифры считаются как буквы)
+                'pattern': r'^[IVXLC]+-\d{6}$',
+                'description': 'Свидетельство о рождении'
+            }
+        }
+
+        # Список длин числовых данных для проверки
+        self.numeric_lengths = {pattern['length'] for pattern in self.numeric_patterns.values()}
+
+    def _load_medical_terms(self):
+        """
+        Загружает базу медицинских терминов из файла или создает её при первом запуске
+        """
+        terms_file = Path('data/medical_terms.json')
+        
+        if not terms_file.exists():
+            logger.info("База медицинских терминов не найдена. Начинаем загрузку...")
+            try:
+                # Создаем директорию если её нет
+                terms_file.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Загружаем термины из нескольких источников
+                terms = set()
+                
+                # 1. Загружаем из Медицинского словаря
+                try:
+                    response = requests.get('https://medical-dictionary.thefreedictionary.com/')
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        # Ищем все термины на странице (пример селектора, нужно уточнить)
+                        for term in soup.select('.term-list a'):
+                            terms.add(term.text.strip().lower())
+                except Exception as e:
+                    logger.error(f"Ошибка при загрузке терминов из Medical Dictionary: {str(e)}")
+
+                # 2. Загружаем из Медицинской энциклопедии
+                try:
+                    response = requests.get('https://www.medical-enc.ru/')
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        # Ищем все термины на странице (пример селектора, нужно уточнить)
+                        for term in soup.select('.encyclopedia-list a'):
+                            terms.add(term.text.strip().lower())
+                except Exception as e:
+                    logger.error(f"Ошибка при загрузке терминов из Медицинской энциклопедии: {str(e)}")
+
+                # 3. Добавляем базовые медицинские термины
+                basic_terms = {
+                    # Анатомические термины
+                    'голова', 'шея', 'грудь', 'спина', 'живот', 'таз', 'рука', 'нога',
+                    'кисть', 'стопа', 'палец', 'глаз', 'ухо', 'нос', 'рот', 'зуб',
+                    'язык', 'горло', 'пищевод', 'желудок', 'кишка', 'печень', 'почка',
+                    'сердце', 'легкое', 'мозг', 'позвоночник', 'кость', 'мышца', 'связка',
+                    'сустав', 'кровь', 'лимфа', 'нерв', 'сосуд', 'артерия', 'вена',
+                    
+                    # Медицинские процедуры
+                    'осмотр', 'пальпация', 'перкуссия', 'аускультация', 'рентген',
+                    'узи', 'кт', 'мрт', 'экг', 'эндоскопия', 'биопсия', 'операция',
+                    'перевязка', 'инъекция', 'капельница', 'массаж', 'физиотерапия',
+                    
+                    # Симптомы и состояния
+                    'боль', 'температура', 'кашель', 'насморк', 'тошнота', 'рвота',
+                    'диарея', 'запор', 'головокружение', 'слабость', 'усталость',
+                    'сонливость', 'бессонница', 'тревога', 'депрессия', 'стресс',
+                    
+                    # Диагнозы
+                    'грипп', 'орви', 'пневмония', 'бронхит', 'гастрит', 'язва',
+                    'гипертония', 'гипотония', 'диабет', 'артрит', 'артроз',
+                    'остеохондроз', 'сколиоз', 'мигрень', 'инсульт', 'инфаркт',
+                    
+                    # Лекарства и препараты
+                    'антибиотик', 'анальгетик', 'антисептик', 'витамин', 'гормон',
+                    'иммуномодулятор', 'пробиотик', 'фермент', 'антигистамин',
+                    
+                    # Единицы измерения
+                    'миллиметр', 'сантиметр', 'метр', 'миллилитр', 'литр',
+                    'миллиграмм', 'грамм', 'килограмм', 'миллимоль', 'моль',
+                    'миллиграмм-процент', 'миллиграмм-децилитр', 'миллиграмм-литр',
+                    'микрограмм-литр', 'наномоль-литр', 'миллимоль-литр',
+                    'единица-литр', 'международная-единица', 'миллиединица',
+                    'килоединица', 'миллиединица-миллилитр', 'грамм-литр',
+                    'пикограмм-миллилитр', 'фемтограмм', 'микрометр', 'нанометр',
+                    'паскаль', 'килопаскаль', 'миллиметр-ртутного-столба',
+                    'секунда', 'минута', 'час', 'сутки', 'неделя', 'месяц', 'год',
+                    'удар-в-минуту', 'дыхание-в-минуту', 'миллиметр-в-час',
+                    'грамм-в-сутки', 'миллиграмм-в-сутки', 'миллиграмм-на-килограмм',
+                    'микрограмм-на-килограмм', 'миллиграмм-процент', 'миллиграмм-миллилитр',
+                    'микрограмм-миллилитр', 'наномоль-литр', 'микромоль-литр',
+                    'миллимоль-литр', 'моль-литр', 'единица-литр', 'международная-единица-литр',
+                    'килоединица-литр', 'миллиединица-литр', 'относительная-единица',
+                    'международное-нормализованное-отношение', 'протромбиновый-индекс',
+                    'активированное-частичное-тромбопластиновое-время', 'фибриноген',
+                    'тромбиновое-время', 'д-димер', 'растворимые-фибрин-мономерные-комплексы',
+                    'протромбиновое-время', 'активность-протромбина',
+                    
+                    # Аббревиатуры
+                    'оак', 'оам', 'бак', 'экг', 'узи', 'мрт', 'кт', 'рег', 'ээг',
+                    'фгдс', 'фкс', 'ифа', 'пцр', 'соэ', 'лдг', 'алт', 'аст', 'ггт',
+                    'щф', 'хс', 'лпнп', 'лпвп', 'тг', 'гп', 'сд', 'ад', 'чсс', 'чдд',
+                    'spo2', 'sao2', 'fio2', 'pao2', 'paco2', 'ph', 'be', 'hb', 'rbc',
+                    'wbc', 'plt', 'hct', 'mcv', 'mch', 'mchc', 'rdw', 'rdw-sd', 'rdw-cv',
+                    'pct', 'mpv', 'pdw', 'esr', 'crp', 'ast', 'alt', 'ggt', 'alp', 'tbil',
+                    'dbil', 'ibil', 'tp', 'alb', 'glob', 'urea', 'crea', 'glu', 'chol',
+                    'tg', 'hdl', 'ldl', 'vldl', 'ck', 'ck-mb', 'ldh', 'amyl', 'lipase',
+                    'na', 'k', 'cl', 'ca', 'p', 'mg', 'fe', 'ferr', 'tibc', 'uibc',
+                    'transferrin', 'crp', 'procalcitonin', 'lactate', 'crp', 'esr', 'rf',
+                    'aslo', 'ana', 'anca', 'dsdna', 'ena', 'ccp', 'apla', 'coags', 'pt',
+                    'inr', 'aptt', 'tt', 'fibrinogen', 'd-dimer', 'fdp', 'atiii', 'pc',
+                    'ps', 'ua', 'le', 'rbc', 'wbc', 'epi', 'cyl', 'crystals', 'bacteria',
+                    'yeast', 'ph', 'sg', 'prot', 'glu', 'ket', 'bil', 'uro', 'nit', 'le',
+                    'rbc', 'wbc', 'epi', 'cyl', 'csf', 'prot', 'glu', 'cells', 'cl',
+                    'lactate', 'ecg', 'eeg', 'emg', 'enmg', 'echocg', 'us', 'ct', 'mri',
+                    'x-ray', 'pet-ct', 'spect', 'fgds', 'fcs', 'colono', 'broncho',
+                    'gastro', 'laparos', 'thoracos', 'arthros', 'ecmo', 'ivl', 'cpap',
+                    'bipap', 'niv', 'hfnc', 'o2', 'iv', 'im', 'sc', 'po', 'pr', 'pv',
+                    'sl', 'td', 'ih', 'neb', 'et', 'io', 'it', 'cpr', 'aed', 'acls',
+                    'bls', 'pals', 'nrp', 'icd-10', 'icd-11', 'who', 'fda', 'ema', 'cdc',
+                    'nih', 'nice', 'sign', 'uptodate', 'medlineplus', 'pubmed', 'elibrary',
+                    'cyberleninka', 'google-scholar', 'web-of-science', 'scopus', 'ринц'
+                }
+                terms.update(basic_terms)
+
+                # Сохраняем термины в файл
+                with open(terms_file, 'w', encoding='utf-8') as f:
+                    json.dump(list(terms), f, ensure_ascii=False, indent=2)
+                
+                logger.info(f"База медицинских терминов успешно создана: {len(terms)} терминов")
+                
+            except Exception as e:
+                logger.error(f"Ошибка при создании базы медицинских терминов: {str(e)}")
+                logger.exception("Полный стек ошибки:")
+                return
+
+        # Загружаем термины из файла
+        try:
+            with open(terms_file, 'r', encoding='utf-8') as f:
+                self.medical_terms = set(json.load(f))
+            logger.info(f"База медицинских терминов загружена: {len(self.medical_terms)} терминов")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке базы медицинских терминов: {str(e)}")
+            logger.exception("Полный стек ошибки:")
+
+    def _is_medical_term(self, word: str) -> bool:
+        """
+        Проверяет, является ли слово медицинским термином
+        
+        Args:
+            word: слово для проверки
+            
+        Returns:
+            bool: является ли слово медицинским термином
+        """
+        # Приводим слово к нижнему регистру и удаляем знаки препинания
+        word_clean = ''.join(c.lower() for c in word if c.isalnum() or c.isspace())
+        
+        # Проверяем точное совпадение
+        if word_clean in self.medical_terms:
+            return True
+            
+        # Проверяем частичные совпадения (для составных терминов)
+        words = word_clean.split()
+        if len(words) > 1:
+            # Проверяем каждое слово отдельно
+            return all(w in self.medical_terms for w in words)
+            
+        return False
+
     def process_document(self, file_path: str, clinic_name: str, output_dir: str) -> Tuple[str, Dict]:
         """
         Обработка одного документа
-        
-        Args:
-            file_path: путь к файлу документа
-            clinic_name: название клиники
-            output_dir: директория для сохранения обработанных файлов
-            
-        Returns:
-            Tuple[str, Dict]: путь к обработанному файлу и извлеченные данные
         """
-        logger.info(f"Начало обработки документа: {file_path}")
-        logger.info(f"Клиника: {clinic_name}")
-        logger.info(f"Директория для сохранения: {output_dir}")
-
         # Генерируем уникальный ID документа и анализа
         document_id = str(uuid.uuid4())
         analysis_id = str(uuid.uuid4())
-        logger.info(f"Сгенерирован ID документа: {document_id}")
-        logger.info(f"Сгенерирован ID анализа: {analysis_id}")
 
         # Загружаем изображение
-        logger.info("Попытка загрузки изображения...")
         image, file_type = utils.load_image(file_path)
         if image is None:
-            logger.error(f"Ошибка загрузки изображения: {file_path}")
             raise ValueError(f"Не удалось загрузить изображение: {file_path}")
 
-        logger.info(f"Изображение успешно загружено. Тип: {file_type}, размер: {image.shape}")
-
         # Распознаем текст
-        logger.info("Начало распознавания текста...")
         text_data = self._recognize_text(image)
-        logger.info(f"Распознано {len(text_data)} слов")
-        if text_data:
-            logger.debug(f"Примеры распознанных слов: {text_data[:5]}")
 
         # Извлекаем данные
-        logger.info("Начало извлечения данных...")
         extracted_data = self._extract_data(text_data)
-        logger.info(f"Извлечено {len(extracted_data['sensitive_regions'])} чувствительных регионов")
-        logger.info(f"Извлечено {len(extracted_data['medical_data'])} типов медицинских данных")
 
         # Ищем фамилию и имя пациента в тексте
         patient_info = self._extract_patient_info(text_data)
-        if patient_info:
-            logger.info(f"Найдена информация о пациенте: {patient_info}")
-            # Сохраняем связь пациента с анализом
-            if self.db is not None:
+        if patient_info and self.db is not None:
                 try:
                     self.db.add_patient_analysis(
                         document_id=document_id,
@@ -503,27 +752,19 @@ class DocumentProcessor:
                         name=patient_info['name'],
                         analysis_id=analysis_id
                     )
-                    logger.info("Связь пациента с анализом успешно сохранена в базу")
                 except Exception as e:
                     logger.error(f"Ошибка при сохранении связи пациента с анализом: {str(e)}")
-        else:
-            logger.warning("Не удалось найти информацию о пациенте")
 
         # Маскируем чувствительные данные
-        logger.info("Начало маскирования чувствительных данных...")
         masked_image = self._mask_sensitive_data(image, extracted_data['sensitive_regions'])
-        logger.info("Маскирование завершено")
 
-        # Сохраняем обработанное изображение с ID анализа в имени
+        # Сохраняем обработанное изображение
         output_filename = f"analysis_{analysis_id}.jpg"
         output_path = os.path.join(output_dir, output_filename)
-        logger.info(f"Сохранение обработанного изображения: {output_path}")
         utils.save_image(masked_image, output_path)
-        logger.info("Изображение успешно сохранено")
 
         # Сохранение в базу данных
         if self.db is not None:
-            logger.info("Сохранение данных в базу...")
             self._save_to_database(
                 document_id=document_id,
                 original_filename=file_path,
@@ -531,31 +772,22 @@ class DocumentProcessor:
                 clinic_name=clinic_name,
                 extracted_data=extracted_data
             )
-            logger.info("Данные успешно сохранены в базу")
-        else:
-            logger.warning("База данных не инициализирована, сохранение в БД пропущено")
 
-        logger.info(f"Обработка документа {file_path} завершена")
         return output_path, extracted_data
 
     def _recognize_text(self, image: np.ndarray) -> List[Dict]:
         """
         Распознавание текста на изображении с поддержкой русского и английского языков
         """
-        logger.info("Начало распознавания текста через Tesseract...")
         try:
-            # Сначала пробуем распознать с обоими языками
             data = pytesseract.image_to_data(
                 image, 
-                lang='rus+eng',  # Используем обе языковые модели
-                config='--psm 6',  # Page segmentation mode: Assume a single uniform block of text
+                lang='rus+eng',
+                config='--psm 6',
                 output_type=pytesseract.Output.DICT
             )
-            logger.info(f"Tesseract вернул {len(data['text'])} элементов (rus+eng)")
 
-            # Если распознано мало слов, пробуем только английский
             if len([t for t in data['text'] if t.strip()]) < 5:
-                logger.info("Мало слов распознано, пробуем только английский язык...")
                 eng_data = pytesseract.image_to_data(
                     image,
                     lang='eng',
@@ -563,21 +795,14 @@ class DocumentProcessor:
                     output_type=pytesseract.Output.DICT
                 )
                 
-                # Сравниваем результаты и берем лучшие
                 if len([t for t in eng_data['text'] if t.strip()]) > len([t for t in data['text'] if t.strip()]):
-                    logger.info("Английская модель показала лучший результат")
                     data = eng_data
-                else:
-                    logger.info("Комбинированная модель показала лучший результат")
 
-            # Формируем список слов с координатами
             words = []
             for i in range(len(data['text'])):
                 if data['text'][i].strip():
-                    # Проверяем уверенность распознавания
                     confidence = float(data['conf'][i])
-                    if confidence < 30:  # Пропускаем слова с низкой уверенностью
-                        logger.debug(f"Пропущено слово с низкой уверенностью: '{data['text'][i]}' (conf={confidence})")
+                    if confidence < 30:
                         continue
 
                     word = {
@@ -590,227 +815,254 @@ class DocumentProcessor:
                         'lang': 'eng' if all(c.isascii() for c in data['text'][i]) else 'rus'
                     }
                     words.append(word)
-                    if i < 5:  # Логируем первые 5 слов для примера
-                        logger.debug(f"Распознано слово: {word}")
-
-            logger.info(f"Успешно распознано {len(words)} слов")
-            if words:
-                logger.debug(f"Примеры распознанных слов: {words[:5]}")
-                # Статистика по языкам
-                eng_words = len([w for w in words if w['lang'] == 'eng'])
-                rus_words = len([w for w in words if w['lang'] == 'rus'])
-                logger.info(f"Статистика по языкам: английских слов - {eng_words}, русских слов - {rus_words}")
 
             return words
         except Exception as e:
             logger.error(f"Ошибка при распознавании текста: {str(e)}")
             raise
 
-    def _is_personal_data(self, word: str) -> bool:
-        """
-        Проверяет, является ли слово персональными данными с помощью Natasha
-        """
-        if not word or len(word.strip()) < 2:  # Пропускаем слишком короткие слова
-            return False
-
-        logger.debug(f"Проверка слова '{word}' на персональные данные через Natasha")
-        try:
-            doc = Doc(word)
-            doc.segment()
-            doc.tag_ner(self.ner_tagger)
-            
-            # Логируем все найденные сущности
-            for span in doc.spans:
-                logger.debug(f"Natasha определила сущность: тип={span.type}, текст={span.text}")
-            
-            is_personal = any(span.type in {"PER", "ORG", "LOC"} for span in doc.spans)
-            logger.debug(f"Результат проверки слова '{word}': {'персональные данные' if is_personal else 'не персональные данные'}")
-            return is_personal
-        except Exception as e:
-            logger.warning(f"Ошибка при проверке слова '{word}' через Natasha: {str(e)}")
-            # При ошибке Natasha используем эвристическую проверку
-            return self._heuristic_check_personal_data(word)
-
-    def _heuristic_check_personal_data(self, word: str) -> bool:
-        """
-        Эвристическая проверка на персональные данные.
-        Использует базу русских фамилий и проверяет только буквенные последовательности.
-        """
-        # Оставляем только буквы для проверки
-        letters_only = ''.join(c for c in word if c.isalpha())
-        if not letters_only:
-            return False
-
-        # Проверяем на русскую фамилию по базе данных
-        if letters_only.lower() in self.russian_surnames:
-            logger.debug(f"Слово '{word}' найдено в базе русских фамилий")
-            return True
-
-        # Паттерны для определения персональных данных (только буквенные последовательности)
-        patterns = {
-            'name': r'^[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}){0,2}$',  # Имя/ФИО
-            'eng_name': r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}$',  # English name
-            'address': r'^(?:ул|улица|пр|проспект|пер|переулок|д|дом|кв|квартира|street|avenue|road|lane|drive|way)$'  # Адрес (только ключевые слова)
-        }
-
-        # Проверяем каждый паттерн
-        for pattern_name, pattern in patterns.items():
-            if re.match(pattern, letters_only, re.IGNORECASE):
-                logger.debug(f"Слово '{word}' определено как персональные данные по паттерну {pattern_name}")
-                return True
-
-        # Проверяем только английские окончания фамилий
-        eng_surname_endings = ['son', 'ton', 'man', 'ford', 'wood', 'worth', 'field', 'ley']
-        if all(c.isascii() for c in letters_only):  # Если это английское слово
-            if any(letters_only.lower().endswith(ending) for ending in eng_surname_endings):
-                if len(letters_only) > 3:  # Исключаем короткие слова
-                    logger.debug(f"Слово '{word}' определено как возможная английская фамилия по окончанию")
-                    return True
-
-        return False
-
-    def _is_allowed_word(self, word: str) -> bool:
-        """
-        Проверяет, является ли слово разрешенным.
-        Маскируются только длинные числа (>6 символов) и фамилии из базы данных.
-        """
-        if not word or len(word.strip()) < 2:  # Пропускаем слишком короткие слова
-            return True
-
-        logger.debug(f"Проверка слова: '{word}'")
-        
-        # Проверяем на длинное число (более 6 символов)
-        if word.replace(',', '').replace('.', '').isdigit():
-            if len(word.replace(',', '').replace('.', '')) > 6:
-                logger.debug(f"Слово '{word}' является длинным числом (>6 символов) - будет замазано")
-                return False
-            logger.debug(f"Слово '{word}' является числом (≤6 символов) - разрешено")
-            return True
-
-        # Если слово не содержит букв - разрешаем
-        if not any(c.isalpha() for c in word):
-            logger.debug(f"Слово '{word}' не содержит букв - разрешено")
-            return True
-
-        # Проверяем на фамилию из базы данных
-        letters_only = ''.join(c for c in word if c.isalpha())
-        if letters_only:
-            is_surname = letters_only.lower() in self.russian_surnames
-            logger.debug(f"Проверка слова '{word}' на фамилию: {'найдена' if is_surname else 'не найдена'}")
-            if is_surname:
-                logger.info(f"Слово '{word}' определено как фамилия - будет замазано")
-                return False
-
-        # Если не фамилия и не длинное число - разрешаем
-        return True
-
     def _extract_data(self, text_data: List[Dict]) -> Dict:
-        """
-        Извлечение данных из распознанного текста
-        """
-        logger.info(f"Начало извлечения данных из {len(text_data)} слов")
-        logger.info(f"Размер базы фамилий: {len(self.russian_surnames)}")
-        
-        # Ищем слова для маскирования
         sensitive_regions = []
+        found_surnames = []
 
-        # Проверяем каждое слово
-        for word in text_data:
+        for i, word in enumerate(text_data):
             try:
                 word_text = word['text'].strip()
-                if not word_text:  # Пропускаем пустые слова
+                if not word_text:
                     continue
 
-                # Проверяем на длинное число
-                if word_text.replace(',', '').replace('.', '').isdigit():
-                    if len(word_text.replace(',', '').replace('.', '')) > 6:
-                        logger.info(f"Найдено длинное число '{word_text}' - будет замазано")
-                        sensitive_regions.append({
-                            'type': 'number',
-                            'text': word_text,
-                            'left': word['left'],
-                            'top': word['top'],
-                            'width': word['width'],
-                            'height': word['height']
-                        })
+                # Проверяем числовые данные
+                is_personal_data, data_type = self._is_numeric_personal_data(word_text)
+                if is_personal_data:
+                    sensitive_regions.append({
+                        'text': word_text,
+                        'confidence': word.get('conf', 0),
+                        'left': word.get('left', 0),
+                        'top': word.get('top', 0),
+                        'width': word.get('width', 0),
+                        'height': word.get('height', 0),
+                        'type': data_type
+                    })
+                    logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
                     continue
 
-                # Если слово не содержит букв - пропускаем
-                if not any(c.isalpha() for c in word_text):
-                    continue
-
-                # Проверяем на фамилию
-                letters_only = ''.join(c for c in word_text if c.isalpha())
-                if letters_only:
-                    is_surname = letters_only.lower() in self.russian_surnames
-                    logger.debug(f"Проверка слова '{word_text}' на фамилию: {'найдена' if is_surname else 'не найдена'}")
-                    if is_surname:
-                        logger.info(f"Найдена фамилия '{word_text}' - будет замазана")
-                        sensitive_regions.append({
-                            'type': 'surname',
-                            'text': word_text,
-                            'left': word['left'],
-                            'top': word['top'],
-                            'width': word['width'],
-                            'height': word['height']
-                        })
-
+                if not self._is_allowed_word(word_text, text_data, i):
+                    found_surnames.append(word_text)
+                    sensitive_regions.append({
+                        'text': word_text,
+                        'confidence': word.get('conf', 0),
+                        'left': word.get('left', 0),
+                        'top': word.get('top', 0),
+                        'width': word.get('width', 0),
+                        'height': word.get('height', 0),
+                        'type': 'surname'
+                    })
             except Exception as e:
                 logger.error(f"Ошибка при обработке слова '{word.get('text', '')}': {str(e)}")
                 continue
 
-        logger.info(f"Найдено {len(sensitive_regions)} чувствительных регионов для маскирования")
-        logger.info(f"Из них фамилий: {len([r for r in sensitive_regions if r['type'] == 'surname'])}")
-        logger.info(f"Из них чисел: {len([r for r in sensitive_regions if r['type'] == 'number'])}")
+        # Извлекаем медицинские данные
+        medical_data = []
+        try:
+            for pattern_name, pattern in self.medical_patterns.items():
+                matches = re.finditer(pattern, ' '.join(word['text'] for word in text_data))
+                for match in matches:
+                    medical_data.append({
+                        'type': pattern_name,
+                        'value': match.group(1),
+                        'text': match.group(0)
+                    })
+        except Exception as e:
+            logger.error(f"Ошибка при извлечении медицинских данных: {str(e)}")
         
         return {
             'sensitive_regions': sensitive_regions,
-            'medical_data': {}  # Убрали извлечение медицинских данных
+            'medical_data': medical_data
         }
 
     def _mask_sensitive_data(self, image: np.ndarray, sensitive_regions: List[Dict]) -> np.ndarray:
-        """
-        Маскирование чувствительных данных на изображении
-
-        Args:
-            image: исходное изображение
-            sensitive_regions: список регионов для маскирования
-
-        Returns:
-            np.ndarray: изображение с замазанными данными
-        """
-        logger.info(f"Начало маскирования. Количество регионов: {len(sensitive_regions)}")
-
-        # Создаем копию изображения
         masked_image = image.copy()
 
-        # Маскируем каждый регион
         for region in sensitive_regions:
             try:
-                # Получаем координаты региона
-                left = int(region['left'])
-                top = int(region['top'])
-                width = int(region['width'])
-                height = int(region['height'])
-
-                # Проверяем валидность координат
+                left = int(region.get('left', 0))
+                top = int(region.get('top', 0))
+                width = int(region.get('width', 0))
+                height = int(region.get('height', 0))
+                
                 if (left < 0 or top < 0 or width <= 0 or height <= 0 or
                     left + width > masked_image.shape[1] or
                     top + height > masked_image.shape[0]):
-                    logger.warning(f"Некорректные координаты региона: {region['text']}")
                     continue
 
-                # Маскируем регион черным цветом (0)
                 masked_image[top:top+height, left:left+width] = 0
 
-                logger.info(f"Замазан регион: {region['text']} (x={left}, y={top}, w={width}, h={height})")
-
             except Exception as e:
-                logger.error(f"Ошибка при маскировании региона {region['text']}: {str(e)}")
+                logger.error(f"Ошибка при маскировании региона {region.get('text', '')}: {str(e)}")
                 continue
 
-        logger.info("Маскирование завершено")
         return masked_image
+
+    def _analyze_context(self, text: str) -> List[Dict]:
+        """
+        Анализирует контекст текста с помощью обеих моделей Stanza.
+        Определяет имена собственные в тексте как на русском, так и на английском.
+        """
+        if self.nlp_en is None or self.nlp_ru is None:
+            logger.warning("Одна или обе модели Stanza не загружены")
+            return []
+
+        try:
+            entities = []
+            
+            # Проверяем, есть ли в тексте русские буквы
+            has_russian = any(c in text for c in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
+            
+            # Анализируем оригинальный текст русской моделью, если есть русские буквы
+            if has_russian:
+                logger.info(f"Анализ русского текста: '{text}'")
+                doc_ru = self.nlp_ru(text)
+                for ent in doc_ru.ents:
+                    if ent.type == "PERSON":
+                        entity = {
+                            'word': ent.text,
+                            'entity_group': ent.type,
+                            'score': 1.0,
+                            'model': 'ru',
+                            'start': ent.start_char,
+                            'end': ent.end_char
+                        }
+                        entities.append(entity)
+                        logger.info(f"Русская модель: найдена сущность: '{ent.text}' типа {ent.type} (позиция {ent.start_char}-{ent.end_char})")
+            
+            # Транслитерируем текст для английской модели
+            text_translit = transliterate(text) if has_russian else text
+            logger.info(f"Анализ транслитерированного текста: '{text_translit}'")
+            doc_en = self.nlp_en(text_translit)
+            
+            for ent in doc_en.ents:
+                if ent.type == "PERSON":
+                    # Для транслитерированного текста ищем соответствие в оригинале
+                    original_word = None
+                    if has_russian:
+                        # Ищем слово в оригинальном тексте, которое могло быть транслитерировано
+                        for word in text.split():
+                            if transliterate(word) == ent.text:
+                                original_word = word
+                                break
+                    
+                    entity = {
+                        'word': original_word if original_word else ent.text,
+                        'entity_group': ent.type,
+                        'score': 1.0,
+                        'model': 'en',
+                        'start': ent.start_char,
+                        'end': ent.end_char
+                    }
+                    entities.append(entity)
+                    logger.info(f"Английская модель: найдена сущность: '{ent.text}' типа {ent.type} (позиция {ent.start_char}-{ent.end_char})")
+            
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Ошибка при анализе контекста: {str(e)}")
+            logger.exception("Полный стек ошибки:")
+            return []
+
+    def _is_allowed_word(self, word: str, text_data: List[Dict], current_index: int) -> bool:
+        if not word or len(word.strip()) < 2:
+            logger.info(f"Слово '{word}' слишком короткое - пропускаем")
+            return True
+
+        # Проверяем числовые данные
+        is_personal_data, data_type = self._is_numeric_personal_data(word)
+        if is_personal_data:
+            logger.info(f"Слово '{word}' определено как {data_type} - маскируем")
+            return False
+
+        # Проверяем, является ли слово медицинским термином
+        if self._is_medical_term(word):
+            logger.info(f"Слово '{word}' определено как медицинский термин - пропускаем")
+            return True
+
+        # Проверяем, начинается ли слово с заглавной буквы
+        if not word[0].isupper():
+            logger.info(f"Слово '{word}' начинается с маленькой буквы - пропускаем")
+            return True
+
+        letters_only = ''.join(c for c in word if c.isalpha())
+        if not letters_only:
+            logger.info(f"Слово '{word}' не содержит букв - пропускаем")
+            return True
+
+        word_lower = letters_only.lower()
+        
+        # Проверяем как русский вариант, так и транслитерированный
+        is_surname = (word_lower in self.russian_surnames or 
+                     word_lower in self.translit_surnames or
+                     transliterate(word_lower) in self.translit_surnames)
+
+        logger.info(f"Проверка слова '{word}' (нижний регистр: '{word_lower}'):")
+        logger.info(f"- В списке русских фамилий: {word_lower in self.russian_surnames}")
+        logger.info(f"- В списке транслитерированных фамилий: {word_lower in self.translit_surnames}")
+        logger.info(f"- Транслитерация в списке: {transliterate(word_lower) in self.translit_surnames}")
+
+        if not is_surname:
+            logger.info(f"Слово '{word}' не похоже на фамилию - пропускаем")
+            return True
+
+        # Анализируем контекст слова
+        start_idx = max(0, current_index - 5)
+        end_idx = min(len(text_data), current_index + 6)
+        context_words = [w['text'] for w in text_data[start_idx:end_idx]]
+        context_text = ' '.join(context_words)
+        
+        logger.info(f"Проверка слова '{word}' в контексте: '{context_text}'")
+        logger.info(f"Индекс слова в контексте: {current_index - start_idx}")
+        logger.info(f"Слова в контексте: {context_words}")
+        
+        entities = self._analyze_context(context_text)
+        
+        # Считаем, сколько моделей определили слово как имя собственное
+        models_identified = set()
+        for entity in entities:
+            if entity['word'] == word and entity['entity_group'] == "PERSON":
+                models_identified.add(entity['model'])
+                logger.info(f"Слово '{word}' определено как PERSON моделью {entity['model']}")
+            elif entity['word'] == word:
+                logger.info(f"Слово '{word}' определено как {entity['entity_group']} моделью {entity['model']}")
+
+        # Проверяем, является ли слово частью полного имени
+        is_part_of_full_name = False
+        if len(context_words) >= 3:  # Если в контексте достаточно слов для полного имени
+            # Ищем паттерн "Фамилия Имя Отчество"
+            for i in range(len(context_words) - 2):
+                if (context_words[i][0].isupper() and 
+                    context_words[i+1][0].isupper() and 
+                    context_words[i+2][0].isupper()):
+                    is_part_of_full_name = True
+                    logger.info(f"Найден паттерн полного имени: {' '.join(context_words[i:i+3])}")
+                    break
+
+        # Если обе модели определили слово как имя собственное - маскируем
+        if len(models_identified) >= 2:
+            logger.info(f"Слово '{word}' определено как PERSON обеими моделями - маскируем")
+            return False
+        
+        # Если слово является частью полного имени - маскируем
+        if is_part_of_full_name:
+            logger.info(f"Слово '{word}' является частью полного имени - маскируем")
+            return False
+        
+        # Если только одна модель определила как PERSON, проверяем контекст
+        if len(models_identified) == 1:
+            for entity in entities:
+                if entity['word'] == word and entity['entity_group'] in ['PERSON', 'ORG']:
+                    logger.info(f"Слово '{word}' определено как часть {entity['entity_group']} одной моделью")
+                    return True
+
+        logger.info(f"Слово '{word}' определено как фамилия (возможно в транслите)")
+        return False
 
     def _save_to_database(self,
                          document_id: str,
@@ -897,3 +1149,31 @@ class DocumentProcessor:
         
         logger.warning("Не удалось найти достоверную информацию о пациенте")
         return None
+
+    def _is_numeric_personal_data(self, text: str) -> Tuple[bool, str]:
+        """
+        Проверяет, является ли числовая строка персональными данными
+        
+        Args:
+            text: строка для проверки
+            
+        Returns:
+            Tuple[bool, str]: (является ли персональными данными, описание типа данных)
+        """
+        # Удаляем все нецифровые символы для проверки длины
+        digits_only = ''.join(c for c in text if c.isdigit())
+        
+        # Проверяем длину
+        if len(digits_only) not in self.numeric_lengths:
+            return False, ""
+            
+        # Проверяем каждый паттерн
+        for data_type, pattern_info in self.numeric_patterns.items():
+            if re.match(pattern_info['pattern'], text):
+                return True, pattern_info['description']
+                
+        # Если длина совпадает с длиной паспорта (10 цифр), считаем это паспортными данными
+        if len(digits_only) == 10:
+            return True, "Паспорт"
+            
+        return False, ""

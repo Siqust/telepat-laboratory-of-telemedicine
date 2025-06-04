@@ -13,6 +13,8 @@ from src.processor import DocumentProcessor
 from src.database import Database
 import re
 import numpy as np
+from src.nlp_model import NERModel
+
 
 def setup_logging(log_file: str = 'deidentification.log') -> None:
     """
@@ -325,28 +327,8 @@ class BatchProcessor:
     
     def _init_medical_classifications(self, db: Database):
         """Инициализация медицинских классификаций из базы данных"""
-        try:
-            # Загрузка МКБ-10
-            icd10_codes = db.execute("SELECT code, name FROM icd10_codes")
-            self.medical_classifications['icd10'] = {
-                (code, name.lower()) for code, name in icd10_codes
-            }
-            
-            # Загрузка МКБ-11
-            icd11_codes = db.execute("SELECT code, name FROM icd11_codes")
-            self.medical_classifications['icd11'] = {
-                (code, name.lower()) for code, name in icd11_codes
-            }
-            
-            # Загрузка медицинских протоколов
-            protocols = db.execute("SELECT name, description FROM medical_protocols")
-            self.medical_classifications['medical_protocols'] = {
-                (name.lower(), desc.lower()) for name, desc in protocols
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Ошибка при загрузке медицинских классификаций: {e}")
-            raise
+        # Эта функция теперь не нужна, так как классификации не используются для валидации
+        self.logger.info("Пропущена инициализация медицинских классификаций, т.к. валидация отключена")
 
     def _verify_name_context(self, text: str, start: int, end: int) -> bool:
         """Проверка контекста имени"""
@@ -457,158 +439,27 @@ class BatchProcessor:
 
     def _validate_personal_data(self, data_type: str, value: str, context: str) -> bool:
         """
-        Расширенная валидация персональных данных
-        
-        Args:
-            data_type: тип данных (name, address, etc.)
-            value: найденное значение
-            context: контекст, в котором найдено значение
-            
-        Returns:
-            bool: является ли данное значение персональными данными
+        Расширенная валидация персональных данных (отключена)
+
+        Всегда возвращает False, т.к. маскирование отключено.
         """
-        # Сначала проверяем на медицинские термины и сокращения
-        value_lower = value.lower().strip('., ')
-        
-        # Проверка на медицинские сокращения
-        if value_lower in self.medical_abbreviations:
-            return False
-            
-        # Проверка на медицинские термины
-        if any(term in value_lower for term in self.medical_whitelist):
-            return False
-            
-        # Проверка на медицинские маркеры в контексте
-        text = self._get_context_text(value, context)
-        if any(marker in text.lower() for marker in self.medical_context_markers['medical_markers']):
-            return False
-            
-        # Базовая проверка контекста
-        if context in self.allowed_contexts:
-            return False
-            
-        # Получаем текст для проверки контекста
-        text = self._get_context_text(value, context)
-        
-        # Применяем специфичные правила верификации
-        if data_type in self.verification_rules:
-            verification_results = []
-            for rule in self.verification_rules[data_type]:
-                try:
-                    if data_type == 'name':
-                        result = rule(text, text.find(value), text.find(value) + len(value))
-                    else:
-                        result = rule(value, text)
-                    verification_results.append(result)
-                except Exception as e:
-                    self.logger.error(f"Ошибка при верификации {data_type}: {e}")
-                    verification_results.append(False)
-            
-            # Требуем подтверждения всех правил
-            if not all(verification_results):
-                return False
-        
-        # Проверка порога уверенности
-        if data_type in self.confidence_thresholds:
-            confidence = self._calculate_confidence(data_type, value, context)
-            if confidence < self.confidence_thresholds[data_type]:
-                return False
-        
-        # Дополнительные проверки в зависимости от типа данных
-        if data_type == 'name':
-            # Проверка формата имени
-            if not self._verify_name_format(value):
-                return False
-                
-            # Проверка контекста
-            if not self._verify_name_context(text, text.find(value), text.find(value) + len(value)):
-                return False
-                
-            # Проверка частоты
-            if not self._verify_name_frequency(value, text):
-                return False
-                
-        elif data_type == 'diagnosis':
-            # Проверка по МКБ
-            if not self._verify_diagnosis_icd(value):
-                return False
-                
-            # Проверка контекста
-            if not self._verify_diagnosis_context(text, text.find(value), text.find(value) + len(value)):
-                return False
-                
-            # Проверка согласованности
-            if not self._verify_diagnosis_consistency(value, text):
-                return False
-                
-        elif data_type == 'procedure':
-            # Проверка по протоколам
-            if not self._verify_procedure_protocol(value):
-                return False
-                
-            # Проверка контекста
-            if not self._verify_procedure_context(text, text.find(value), text.find(value) + len(value)):
-                return False
-                
-            # Проверка согласованности
-            if not self._verify_procedure_consistency(value, text):
-                return False
-        
-        return True
+        self.logger.debug(f"Валидация данных отключена. Проверка: тип={data_type}, значение='{value}', контекст='{context}'")
+        return False # Всегда возвращаем False, т.к. маскирование отключено
 
     def _calculate_confidence(self, data_type: str, value: str, context: str) -> float:
         """
-        Расчет уверенности в правильности определения данных
-        
-        Args:
-            data_type: тип данных
-            value: значение
-            context: контекст
-            
-        Returns:
-            float: значение уверенности от 0 до 1
+        Расчет уверенности в правильности определения данных (отключен)
+
+        Всегда возвращает 0.0, т.к. маскирование отключено.
         """
-        confidence = 0.0
-        weights = {
-            'model_confidence': 0.4,
-            'context_match': 0.3,
-            'format_match': 0.2,
-            'frequency_match': 0.1
-        }
-        
-        # Уверенность модели
-        if hasattr(self, f'_{data_type}_model_confidence'):
-            confidence += weights['model_confidence'] * getattr(self, f'_{data_type}_model_confidence')(value)
-        
-        # Соответствие контексту
-        if data_type in self.verification_rules:
-            context_matches = sum(1 for rule in self.verification_rules[data_type] 
-                                if rule(value, context))
-            confidence += weights['context_match'] * (context_matches / len(self.verification_rules[data_type]))
-        
-        # Соответствие формату
-        if hasattr(self, f'_verify_{data_type}_format'):
-            confidence += weights['format_match'] * float(getattr(self, f'_verify_{data_type}_format')(value))
-        
-        # Соответствие частоте
-        if hasattr(self, f'_verify_{data_type}_frequency'):
-            confidence += weights['frequency_match'] * float(getattr(self, f'_verify_{data_type}_frequency')(value, context))
-        
-        return confidence
+        self.logger.debug("Расчет уверенности отключен")
+        return 0.0 # Всегда возвращаем 0.0, т.к. маскирование отключено
 
     def _get_context_text(self, value: str, context: str) -> str:
         """
-        Получение контекстного текста для проверки
-        
-        Args:
-            value: искомое значение
-            context: контекст
-            
-        Returns:
-            str: текст для проверки
+        Получение контекстного текста для проверки (отключено)
         """
-        # Здесь должна быть реализация получения текста из документа
-        # В текущей реализации возвращаем контекст как есть
+        # Эта функция теперь не используется для валидации
         return context
 
     def process_directory(self,
@@ -682,176 +533,30 @@ class BatchProcessor:
 
     def _get_word_context(self, match, sections: Dict[str, Tuple[int, int]]) -> str:
         """
-        Определяет контекст слова на основе его позиции в документе
-        
-        Args:
-            match: найденное совпадение
-            sections: словарь секций документа
-            
-        Returns:
-            str: контекст слова
+        Определяет контекст слова на основе его позиции в документе (отключено)
+
+        Всегда возвращает 'unknown', т.к. контекст не используется для маскирования.
         """
-        position = match.start
-        for section_name, (start, end) in sections.items():
-            if start <= position <= end:
-                return section_name
-        return 'unknown'
+        return 'unknown' # Всегда возвращаем unknown, т.к. контекст не используется для маскирования
 
     def _is_sensitive_context(self, context: str) -> bool:
         """
-        Проверяет, является ли контекст чувствительным для маскирования
-        
-        Args:
-            context: контекст слова
-            
-        Returns:
-            bool: нужно ли маскировать данные в этом контексте
-        """
-        sensitive_sections = {'patient_info', 'medical_data'}
-        return context in sensitive_sections
+        Проверяет, является ли контекст чувствительным для маскирования (отключено)
 
-    def _extract_names_with_natasha(self, text: str) -> List[Dict]:
-        """Извлечение имен с помощью Natasha"""
-        matches = list(self.names_extractor(text))
-        results = []
-        for match in matches:
-            if match.fact:
-                results.append({
-                    'text': match.text,
-                    'start': match.start,
-                    'end': match.stop,
-                    'confidence': 1.0,  # Natasha не предоставляет уверенность
-                    'model': 'natasha',
-                    'fact': {
-                        'first': match.fact.first,
-                        'last': match.fact.last,
-                        'middle': match.fact.middle
-                    }
-                })
-        return results
-        
-    def _extract_names_with_deep_pavlov(self, text: str) -> List[Dict]:
-        """Извлечение имен с помощью DeepPavlov"""
-        if not self.use_deep_pavlov:
-            return []
-            
-        results = []
-        tokens, tags, probs = self.deep_pavlov_model([text])
-        
-        current_name = []
-        current_start = 0
-        current_confidence = 0.0
-        
-        for token, tag, prob in zip(tokens[0], tags[0], probs[0]):
-            if tag == 'B-PER' or (tag == 'I-PER' and current_name):
-                if tag == 'B-PER' and current_name:
-                    # Сохраняем предыдущее имя
-                    results.append({
-                        'text': ' '.join(current_name),
-                        'start': current_start,
-                        'end': current_start + len(' '.join(current_name)),
-                        'confidence': current_confidence / len(current_name),
-                        'model': 'deep_pavlov',
-                        'fact': {'first': None, 'last': None, 'middle': None}
-                    })
-                    current_name = []
-                
-                if tag == 'B-PER':
-                    current_start = text.find(token)
-                    current_confidence = prob
-                current_name.append(token)
-                
-        # Добавляем последнее имя
-        if current_name:
-            results.append({
-                'text': ' '.join(current_name),
-                'start': current_start,
-                'end': current_start + len(' '.join(current_name)),
-                'confidence': current_confidence / len(current_name),
-                'model': 'deep_pavlov',
-                'fact': {'first': None, 'last': None, 'middle': None}
-            })
-            
-        return results
-        
-    def _extract_names_with_yargy(self, text: str) -> List[Dict]:
-        """Извлечение имен с помощью Yargy"""
-        if not self.use_yargy:
-            return []
-            
-        results = []
-        matches = self.yargy_parser.find(text)
-        
-        for match in matches:
-            if match.fact:
-                results.append({
-                    'text': match.text,
-                    'start': match.span[0],
-                    'end': match.span[1],
-                    'confidence': 1.0,  # Yargy не предоставляет уверенность
-                    'model': 'yargy',
-                    'fact': {
-                        'first': match.fact.first,
-                        'last': match.fact.last,
-                        'middle': match.fact.middle
-                    }
-                })
-        return results
-        
-    def _merge_model_results(self, results: List[List[Dict]]) -> List[Dict]:
+        Всегда возвращает False, т.к. маскирование отключено.
         """
-        Объединение результатов разных моделей с помощью голосования
-        
-        Args:
-            results: список результатов от разных моделей
-            
-        Returns:
-            List[Dict]: объединенные результаты
-        """
-        # Создаем словарь для подсчета голосов
-        votes = {}
-        
-        # Подсчитываем голоса для каждого найденного имени
-        for model_results in results:
-            for result in model_results:
-                key = (result['start'], result['end'])
-                if key not in votes:
-                    votes[key] = {
-                        'text': result['text'],
-                        'count': 0,
-                        'confidence_sum': 0,
-                        'models': set(),
-                        'fact': result['fact']
-                    }
-                votes[key]['count'] += 1
-                votes[key]['confidence_sum'] += result['confidence']
-                votes[key]['models'].add(result['model'])
-        
-        # Фильтруем результаты
-        merged_results = []
-        for (start, end), vote in votes.items():
-            # Проверяем, что имя найдено как минимум двумя моделями
-            # или одной моделью с высокой уверенностью
-            if (vote['count'] >= 2 or 
-                (vote['count'] == 1 and vote['confidence_sum'] > self.confidence_threshold)):
-                merged_results.append({
-                    'text': vote['text'],
-                    'start': start,
-                    'end': end,
-                    'confidence': vote['confidence_sum'] / vote['count'],
-                    'models': list(vote['models']),
-                    'fact': vote['fact']
-                })
-        
-        return merged_results
+        return False # Всегда возвращаем False, т.к. маскирование отключено
 
     def _extract_data(self, text_data: List[Dict]) -> Dict:
         """
-        Извлечение данных из распознанного текста
+        Извлечение данных из распознанного текста (отключено для маскирования)
+
+        Возвращает пустой список чувствительных регионов, т.к. маскирование отключено.
         """
         # Возвращаем пустой список регионов - маскирование отключено
+        self.logger.info("Извлечение данных: маскирование отключено, возвращаем пустой список регионов.")
         return {
-            'sensitive_regions': [],
+            'sensitive_regions': [], # Возвращаем пустой список
             'medical_data': {}
         }
 
@@ -903,16 +608,21 @@ class BatchProcessor:
         self.logger.info(f"Размер изображения: {image.shape}")
         self.logger.info(f"Количество регионов для маскирования: {len(sensitive_regions)}")
         
+        # В текущей реализации маскирование отключено, просто возвращаем исходное изображение
+        if not sensitive_regions:
+            self.logger.info("Нет регионов для маскирования. Возвращаем исходное изображение.")
+            return image
+
         # Создаем копию изображения
         masked_image = image.copy()
-        
+
         # Добавляем проверку на пересечение регионов
         def is_overlapping(region1: Dict, region2: Dict) -> bool:
             return not (region1['left'] + region1['width'] < region2['left'] or
                        region2['left'] + region2['width'] < region1['left'] or
                        region1['top'] + region1['height'] < region2['top'] or
                        region2['top'] + region2['height'] < region1['top'])
-        
+
         # Объединяем пересекающиеся регионы
         merged_regions = []
         for region in sensitive_regions:
@@ -984,7 +694,7 @@ class BatchProcessor:
         """
         logging.info(f"Контекст: {context}")
         logging.info(f"Найденные данные: {found_data}")
-        logging.info(f"Принято решение о маскировании: {self._validate_personal_data(**found_data)}")
+        logging.info("Решение о маскировании: Отключено") # Изменено сообщение
 
     def _is_medical_term(self, text: str) -> bool:
         """
@@ -997,32 +707,8 @@ class BatchProcessor:
             bool: является ли текст медицинским термином
         """
         text = text.lower().strip('., ')
-        self.logger.debug(f"Проверка текста на медицинский термин: '{text}'")
-        
-        # Создаем множество всех исключений для быстрой проверки
-        all_exceptions = set()
-        all_exceptions.update(self.measurement_units)
-        all_exceptions.update(self.medical_abbreviations)
-        all_exceptions.update(self.medical_whitelist)
-        
-        # Проверка на точное совпадение
-        if text in all_exceptions:
-            self.logger.debug(f"Точное совпадение с исключением: {text}")
-            return True
-            
-        # Проверка на вхождение в исключения
-        if any(term in text or text in term for term in all_exceptions):
-            self.logger.debug(f"Найдено совпадение с исключением в тексте: {text}")
-            return True
-            
-        # Проверка по паттернам
-        for pattern in self.measurement_patterns + self.medical_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                self.logger.debug(f"Найдено совпадение с паттерном: {text}")
-                return True
-                
-        self.logger.debug(f"Текст не является медицинским термином: {text}")
-        return False
+        self.logger.debug(f"Проверка текста на медицинский термин отключена. Всегда возвращается False: '{text}'")
+        return False # Всегда возвращаем False, т.к. проверка отключена
 
 def main():
     """Основная функция для запуска из командной строки"""
