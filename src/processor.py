@@ -36,26 +36,62 @@ class DocumentProcessor:
         self.russian_surnames = set()
         try:
             surnames_path = os.path.join(os.path.dirname(__file__), 'data', 'russian_surnames.txt')
+            logger.info(f"Полный путь к файлу фамилий: {os.path.abspath(surnames_path)}")
+            
             if os.path.exists(surnames_path):
                 logger.info(f"Найден файл с фамилиями: {surnames_path}")
                 file_size = os.path.getsize(surnames_path) / (1024 * 1024)  # размер в МБ
                 logger.info(f"Размер файла: {file_size:.2f} МБ")
                 
-                with open(surnames_path, 'r', encoding='utf-8') as f:
-                    # Читаем первые несколько строк для проверки формата
-                    first_lines = [next(f).strip() for _ in range(5)]
-                    logger.info(f"Примеры фамилий из файла: {first_lines}")
-                    
-                    # Возвращаемся в начало файла
-                    f.seek(0)
-                    
-                    # Загружаем все фамилии
-                    self.russian_surnames = {line.strip().lower() for line in f if line.strip()}
-                    
-                logger.info(f"Загружено {len(self.russian_surnames)} русских фамилий")
-                logger.info(f"Примеры загруженных фамилий: {sorted(list(self.russian_surnames))[:5]}")
+                # Пробуем разные кодировки
+                encodings = ['utf-8', 'cp1251', 'windows-1251', 'ascii']
+                for encoding in encodings:
+                    try:
+                        logger.info(f"Попытка чтения файла в кодировке {encoding}")
+                        with open(surnames_path, 'r', encoding=encoding) as f:
+                            # Читаем первые несколько строк для проверки
+                            first_lines = []
+                            for _ in range(5):
+                                line = f.readline().strip()
+                                if line:
+                                    first_lines.append(line)
+                            logger.info(f"Первые строки в кодировке {encoding}: {first_lines}")
+                            
+                            # Если удалось прочитать строки, пробуем загрузить весь файл
+                            if first_lines:
+                                f.seek(0)  # Возвращаемся в начало файла
+                                surnames = set()
+                                line_count = 0
+                                for line in f:
+                                    line = line.strip()
+                                    if line:
+                                        surnames.add(line.lower())
+                                        line_count += 1
+                                        if line_count <= 5:
+                                            logger.debug(f"Загружена фамилия: {line}")
+                                
+                                self.russian_surnames = surnames
+                                logger.info(f"Успешно загружено {len(self.russian_surnames)} фамилий в кодировке {encoding}")
+                                
+                                # Проверяем несколько тестовых фамилий
+                                test_surnames = ['иванов', 'петров', 'сидоров']
+                                for surname in test_surnames:
+                                    logger.info(f"Тестовая проверка фамилии '{surname}': {'найдена' if surname in self.russian_surnames else 'не найдена'} в базе")
+                                
+                                # Если успешно загрузили фамилии, прерываем цикл
+                                if self.russian_surnames:
+                                    break
+                    except UnicodeDecodeError:
+                        logger.warning(f"Не удалось прочитать файл в кодировке {encoding}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Ошибка при чтении файла в кодировке {encoding}: {str(e)}")
+                        continue
+                
+                if not self.russian_surnames:
+                    logger.error("Не удалось загрузить фамилии ни в одной из кодировок")
             else:
-                logger.warning(f"Файл с фамилиями не найден: {surnames_path}")
+                logger.error(f"Файл с фамилиями не найден: {surnames_path}")
         except Exception as e:
             logger.error(f"Ошибка при загрузке базы фамилий: {str(e)}")
             logger.exception("Полный стек ошибки:")
@@ -413,14 +449,24 @@ class DocumentProcessor:
     def process_document(self, file_path: str, clinic_name: str, output_dir: str) -> Tuple[str, Dict]:
         """
         Обработка одного документа
+        
+        Args:
+            file_path: путь к файлу документа
+            clinic_name: название клиники
+            output_dir: директория для сохранения обработанных файлов
+            
+        Returns:
+            Tuple[str, Dict]: путь к обработанному файлу и извлеченные данные
         """
         logger.info(f"Начало обработки документа: {file_path}")
         logger.info(f"Клиника: {clinic_name}")
         logger.info(f"Директория для сохранения: {output_dir}")
 
-        # Генерируем уникальный ID документа
+        # Генерируем уникальный ID документа и анализа
         document_id = str(uuid.uuid4())
+        analysis_id = str(uuid.uuid4())
         logger.info(f"Сгенерирован ID документа: {document_id}")
+        logger.info(f"Сгенерирован ID анализа: {analysis_id}")
 
         # Загружаем изображение
         logger.info("Попытка загрузки изображения...")
@@ -444,13 +490,32 @@ class DocumentProcessor:
         logger.info(f"Извлечено {len(extracted_data['sensitive_regions'])} чувствительных регионов")
         logger.info(f"Извлечено {len(extracted_data['medical_data'])} типов медицинских данных")
 
+        # Ищем фамилию и имя пациента в тексте
+        patient_info = self._extract_patient_info(text_data)
+        if patient_info:
+            logger.info(f"Найдена информация о пациенте: {patient_info}")
+            # Сохраняем связь пациента с анализом
+            if self.db is not None:
+                try:
+                    self.db.add_patient_analysis(
+                        document_id=document_id,
+                        surname=patient_info['surname'],
+                        name=patient_info['name'],
+                        analysis_id=analysis_id
+                    )
+                    logger.info("Связь пациента с анализом успешно сохранена в базу")
+                except Exception as e:
+                    logger.error(f"Ошибка при сохранении связи пациента с анализом: {str(e)}")
+        else:
+            logger.warning("Не удалось найти информацию о пациенте")
+
         # Маскируем чувствительные данные
         logger.info("Начало маскирования чувствительных данных...")
         masked_image = self._mask_sensitive_data(image, extracted_data['sensitive_regions'])
         logger.info("Маскирование завершено")
 
-        # Сохраняем обработанное изображение
-        output_filename = f"analysis_{document_id}.jpg"
+        # Сохраняем обработанное изображение с ID анализа в имени
+        output_filename = f"analysis_{analysis_id}.jpg"
         output_path = os.path.join(output_dir, output_filename)
         logger.info(f"Сохранение обработанного изображения: {output_path}")
         utils.save_image(masked_image, output_path)
@@ -607,65 +672,47 @@ class DocumentProcessor:
     def _is_allowed_word(self, word: str) -> bool:
         """
         Проверяет, является ли слово разрешенным.
-        Теперь маскируются только буквенные последовательности и длинные числа.
+        Маскируются только длинные числа (>6 символов) и фамилии из базы данных.
         """
         if not word or len(word.strip()) < 2:  # Пропускаем слишком короткие слова
             return True
 
         logger.debug(f"Проверка слова: '{word}'")
         
-        # Проверяем на длинное число (более 5 символов)
+        # Проверяем на длинное число (более 6 символов)
         if word.replace(',', '').replace('.', '').isdigit():
-            if len(word.replace(',', '').replace('.', '')) > 5:
-                logger.debug(f"Слово '{word}' является длинным числом (>5 символов) - будет замазано")
+            if len(word.replace(',', '').replace('.', '')) > 6:
+                logger.debug(f"Слово '{word}' является длинным числом (>6 символов) - будет замазано")
                 return False
-            logger.debug(f"Слово '{word}' является числом (≤5 символов) - разрешено")
+            logger.debug(f"Слово '{word}' является числом (≤6 символов) - разрешено")
             return True
 
-        # Если слово содержит только не-буквенные символы - разрешаем
+        # Если слово не содержит букв - разрешаем
         if not any(c.isalpha() for c in word):
             logger.debug(f"Слово '{word}' не содержит букв - разрешено")
             return True
 
-        # Проверяем медицинские паттерны
-        for pattern_name, pattern in self.medical_patterns.items():
-            if re.fullmatch(pattern, word, re.IGNORECASE):
-                logger.debug(f"Слово '{word}' соответствует медицинскому паттерну '{pattern_name}' - разрешено")
-                return True
+        # Проверяем на фамилию из базы данных
+        letters_only = ''.join(c for c in word if c.isalpha())
+        if letters_only:
+            is_surname = letters_only.lower() in self.russian_surnames
+            logger.debug(f"Проверка слова '{word}' на фамилию: {'найдена' if is_surname else 'не найдена'}")
+            if is_surname:
+                logger.info(f"Слово '{word}' определено как фамилия - будет замазано")
+                return False
 
-        # Проверяем список разрешенных слов
-        is_allowed = word in self.allowed_words
-        logger.debug(f"Слово '{word}' {'найдено' if is_allowed else 'не найдено'} в списке разрешенных слов")
-        
-        if is_allowed:
-            return True
-
-        # Если слово не в списке разрешенных и содержит буквы, проверяем на персональные данные
-        try:
-            # Проверяем только буквенные части слова
-            letters_only = ''.join(c for c in word if c.isalpha())
-            if not letters_only:  # Если после удаления не-букв не осталось символов
-                return True
-                
-            is_personal = self._is_personal_data(letters_only)
-            logger.debug(f"Результат проверки на персональные данные: {'персональные данные' if is_personal else 'не персональные данные'}")
-            return not is_personal
-        except Exception as e:
-            logger.error(f"Ошибка при проверке слова '{word}': {str(e)}")
-            return True
+        # Если не фамилия и не длинное число - разрешаем
+        return True
 
     def _extract_data(self, text_data: List[Dict]) -> Dict:
         """
         Извлечение данных из распознанного текста
         """
         logger.info(f"Начало извлечения данных из {len(text_data)} слов")
-        
-        # Объединяем все слова в один текст
-        full_text = ' '.join(word['text'] for word in text_data)
+        logger.info(f"Размер базы фамилий: {len(self.russian_surnames)}")
         
         # Ищем слова для маскирования
         sensitive_regions = []
-        medical_data = {}
 
         # Проверяем каждое слово
         for word in text_data:
@@ -676,7 +723,7 @@ class DocumentProcessor:
 
                 # Проверяем на длинное число
                 if word_text.replace(',', '').replace('.', '').isdigit():
-                    if len(word_text.replace(',', '').replace('.', '')) > 5:
+                    if len(word_text.replace(',', '').replace('.', '')) > 6:
                         logger.info(f"Найдено длинное число '{word_text}' - будет замазано")
                         sensitive_regions.append({
                             'type': 'number',
@@ -692,40 +739,33 @@ class DocumentProcessor:
                 if not any(c.isalpha() for c in word_text):
                     continue
 
-                if not self._is_allowed_word(word_text):
-                    logger.info(f"Слово '{word_text}' определено как чувствительное - будет замазано")
-                    sensitive_regions.append({
-                        'type': 'text',
-                        'text': word_text,
-                        'left': word['left'],
-                        'top': word['top'],
-                        'width': word['width'],
-                        'height': word['height']
-                    })
-                else:
-                    logger.debug(f"Слово '{word_text}' разрешено - не будет замазано")
+                # Проверяем на фамилию
+                letters_only = ''.join(c for c in word_text if c.isalpha())
+                if letters_only:
+                    is_surname = letters_only.lower() in self.russian_surnames
+                    logger.debug(f"Проверка слова '{word_text}' на фамилию: {'найдена' if is_surname else 'не найдена'}")
+                    if is_surname:
+                        logger.info(f"Найдена фамилия '{word_text}' - будет замазана")
+                        sensitive_regions.append({
+                            'type': 'surname',
+                            'text': word_text,
+                            'left': word['left'],
+                            'top': word['top'],
+                            'width': word['width'],
+                            'height': word['height']
+                        })
+
             except Exception as e:
                 logger.error(f"Ошибка при обработке слова '{word.get('text', '')}': {str(e)}")
                 continue
 
         logger.info(f"Найдено {len(sensitive_regions)} чувствительных регионов для маскирования")
+        logger.info(f"Из них фамилий: {len([r for r in sensitive_regions if r['type'] == 'surname'])}")
+        logger.info(f"Из них чисел: {len([r for r in sensitive_regions if r['type'] == 'number'])}")
         
-        # Поиск медицинских данных
-        for data_type, pattern in self.medical_patterns.items():
-            try:
-                matches = re.finditer(pattern, full_text, re.IGNORECASE)
-                for match in matches:
-                    if data_type not in medical_data:
-                        medical_data[data_type] = []
-                    medical_data[data_type].append(match.group(0))
-                    logger.debug(f"Найден медицинский паттерн '{data_type}': '{match.group(0)}'")
-            except Exception as e:
-                logger.error(f"Ошибка при поиске медицинского паттерна '{data_type}': {str(e)}")
-                continue
-
         return {
             'sensitive_regions': sensitive_regions,
-            'medical_data': medical_data
+            'medical_data': {}  # Убрали извлечение медицинских данных
         }
 
     def _mask_sensitive_data(self, image: np.ndarray, sensitive_regions: List[Dict]) -> np.ndarray:
@@ -796,3 +836,64 @@ class DocumentProcessor:
                 clinic_name=clinic_name,
                 extracted_data=extracted_data
             )
+
+    def _extract_patient_info(self, text_data: List[Dict]) -> Optional[Dict]:
+        """
+        Извлекает информацию о пациенте из распознанного текста
+        
+        Args:
+            text_data: список распознанных слов с координатами
+            
+        Returns:
+            Optional[Dict]: словарь с информацией о пациенте или None, если информация не найдена
+        """
+        logger.info("Поиск информации о пациенте в тексте...")
+        
+        # Паттерны для поиска ФИО
+        name_patterns = [
+            r'(?:Пациент|ФИО|Ф\.И\.О\.|Фамилия)[:\s]+([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){0,2})',
+            r'(?:Фамилия)[:\s]+([А-ЯЁ][а-яё]+)',
+            r'(?:Имя)[:\s]+([А-ЯЁ][а-яё]+)'
+        ]
+        
+        # Собираем весь текст в одну строку для поиска
+        full_text = ' '.join(word['text'] for word in text_data)
+        
+        # Ищем фамилию и имя
+        surname = None
+        name = None
+        
+        for pattern in name_patterns:
+            matches = re.finditer(pattern, full_text, re.IGNORECASE)
+            for match in matches:
+                text = match.group(1).strip()
+                words = text.split()
+                
+                if len(words) >= 2:  # Если найдено полное ФИО
+                    surname = words[0]
+                    name = words[1]
+                    break
+                elif len(words) == 1:  # Если найдена только фамилия или имя
+                    if 'фамилия' in match.group(0).lower():
+                        surname = words[0]
+                    elif 'имя' in match.group(0).lower():
+                        name = words[0]
+                
+                if surname and name:
+                    break
+            
+            if surname and name:
+                break
+        
+        # Проверяем, что фамилия есть в базе данных
+        if surname and surname.lower() in self.russian_surnames:
+            logger.info(f"Найдена фамилия в базе данных: {surname}")
+            if name:
+                logger.info(f"Найдено имя: {name}")
+                return {
+                    'surname': surname,
+                    'name': name
+                }
+        
+        logger.warning("Не удалось найти достоверную информацию о пациенте")
+        return None

@@ -5,7 +5,7 @@
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
-from sqlalchemy import create_engine, Column, String, DateTime, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, String, DateTime, JSON, ForeignKey, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from dotenv import load_dotenv
@@ -31,6 +31,8 @@ class Document(Base):
     
     # Связь с персональными данными
     sensitive_data = relationship("SensitiveData", back_populates="document")
+    # Связь с анализами пациента
+    patient_analyses = relationship("PatientAnalysis", back_populates="document")
 
 class SensitiveData(Base):
     """Модель для хранения персональных данных"""
@@ -44,6 +46,20 @@ class SensitiveData(Base):
     
     # Связь с документом
     document = relationship("Document", back_populates="sensitive_data")
+
+class PatientAnalysis(Base):
+    """Модель для хранения связей между пациентами и их анализами"""
+    __tablename__ = 'patient_analyses'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(String, ForeignKey('documents.document_id'), nullable=False)
+    surname = Column(String, nullable=False, index=True)  # Индекс для быстрого поиска
+    name = Column(String, nullable=False, index=True)  # Индекс для быстрого поиска
+    analysis_id = Column(String, nullable=False, unique=True)  # Уникальный ID анализа
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Связь с документом
+    document = relationship("Document", back_populates="patient_analyses")
 
 class Database:
     """Класс для работы с базой данных"""
@@ -160,4 +176,73 @@ class Database:
         try:
             return session.query(SensitiveData).filter_by(document_id=document_id).all()
         finally:
-            session.close() 
+            session.close()
+
+    def add_patient_analysis(self, document_id: str, surname: str, name: str, analysis_id: str) -> None:
+        """
+        Добавляет запись о связи пациента с анализом
+        
+        Args:
+            document_id: ID документа
+            surname: Фамилия пациента
+            name: Имя пациента
+            analysis_id: ID анализа
+        """
+        with self.Session() as session:
+            patient_analysis = PatientAnalysis(
+                document_id=document_id,
+                surname=surname.lower(),  # Сохраняем в нижнем регистре для единообразия
+                name=name.lower(),  # Сохраняем в нижнем регистре для единообразия
+                analysis_id=analysis_id
+            )
+            session.add(patient_analysis)
+            session.commit()
+            
+    def get_patient_analyses(self, surname: str, name: str) -> List[Dict]:
+        """
+        Получает список анализов пациента по фамилии и имени
+        
+        Args:
+            surname: Фамилия пациента
+            name: Имя пациента
+            
+        Returns:
+            Список словарей с информацией об анализах
+        """
+        with self.Session() as session:
+            analyses = session.query(PatientAnalysis).filter(
+                PatientAnalysis.surname == surname.lower(),
+                PatientAnalysis.name == name.lower()
+            ).all()
+            
+            return [{
+                'analysis_id': a.analysis_id,
+                'document_id': a.document_id,
+                'created_at': a.created_at
+            } for a in analyses]
+            
+    def get_analysis_by_id(self, analysis_id: str) -> Optional[Dict]:
+        """
+        Получает информацию об анализе по его ID
+        
+        Args:
+            analysis_id: ID анализа
+            
+        Returns:
+            Словарь с информацией об анализе или None, если анализ не найден
+        """
+        with self.Session() as session:
+            analysis = session.query(PatientAnalysis).filter(
+                PatientAnalysis.analysis_id == analysis_id
+            ).first()
+            
+            if analysis is None:
+                return None
+                
+            return {
+                'analysis_id': analysis.analysis_id,
+                'document_id': analysis.document_id,
+                'surname': analysis.surname,
+                'name': analysis.name,
+                'created_at': analysis.created_at
+            } 
