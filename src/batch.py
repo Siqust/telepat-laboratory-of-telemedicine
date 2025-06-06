@@ -14,6 +14,7 @@ from src.database import Database
 import re
 import numpy as np
 from src.nlp_model import NERModel
+from src.medical_terms import MedicalTermsManager
 
 
 def setup_logging(log_file: str = 'deidentification.log') -> None:
@@ -324,6 +325,8 @@ class BatchProcessor:
                 self._verify_procedure_consistency
             ]
         }
+        
+        self.medical_terms = MedicalTermsManager()
     
     def _init_medical_classifications(self, db: Database):
         """Инициализация медицинских классификаций из базы данных"""
@@ -707,8 +710,9 @@ class BatchProcessor:
             bool: является ли текст медицинским термином
         """
         text = text.lower().strip('., ')
-        self.logger.debug(f"Проверка текста на медицинский термин отключена. Всегда возвращается False: '{text}'")
-        return False # Всегда возвращаем False, т.к. проверка отключена
+        is_term = self.medical_terms.is_medical_term(text)
+        self.logger.debug(f"Проверка текста на медицинский термин: '{text}' -> {is_term}")
+        return is_term
 
 def main():
     """Основная функция для запуска из командной строки"""

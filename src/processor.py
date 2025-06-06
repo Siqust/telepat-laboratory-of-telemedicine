@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 from pathlib import Path
+from src.medical_terms import MedicalTermsManager
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,7 @@ class DocumentProcessor:
         self.db = db
 
         # Загрузка базы медицинских терминов
-        self.medical_terms = set()
-        self._load_medical_terms()
+        self.medical_terms = MedicalTermsManager()
 
         # Инициализация моделей Stanza для определения имен
         logger.info("Загрузка моделей Stanza для определения имен...")
@@ -703,25 +703,12 @@ class DocumentProcessor:
         Проверяет, является ли слово медицинским термином
         
         Args:
-            word: слово для проверки
+            word: проверяемое слово
             
         Returns:
             bool: является ли слово медицинским термином
         """
-        # Приводим слово к нижнему регистру и удаляем знаки препинания
-        word_clean = ''.join(c.lower() for c in word if c.isalnum() or c.isspace())
-        
-        # Проверяем точное совпадение
-        if word_clean in self.medical_terms:
-            return True
-            
-        # Проверяем частичные совпадения (для составных терминов)
-        words = word_clean.split()
-        if len(words) > 1:
-            # Проверяем каждое слово отдельно
-            return all(w in self.medical_terms for w in words)
-            
-        return False
+        return self.medical_terms.is_medical_term(word)
 
     def process_document(self, file_path: str, clinic_name: str, output_dir: str) -> Tuple[str, Dict]:
         """
