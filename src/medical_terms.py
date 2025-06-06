@@ -25,7 +25,11 @@ class MedicalTermsManager:
             'russian_medical_terms_anatomy.json',
             'russian_medical_terms_drugs.json',
             'russian_medical_terms_procedures.json',
-            'russian_medical_terms_1.json'
+            'russian_medical_terms_1.json',
+            'english_stats_terms.json',
+            'russian_medical_terms_whitelist.json',
+            'russian_stats_terms.json',
+            'english_medical_terms.json'
         ]
         
         for file_name in json_files:
