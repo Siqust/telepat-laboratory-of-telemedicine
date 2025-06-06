@@ -1,0 +1,19 @@
+2025-06-07 02:15:24 | INFO | Данные успешно загружены из CSV файлов
+2025-06-07 02:15:26 | INFO | Найдено 34 файлов для обработки
+2025-06-07 02:15:26 | INFO | Обработка файла: 182719047_205813839_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:15:27 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\bbc73c9714a14e39ad8f428d3e730080_depersonalized.jpg
+2025-06-07 02:15:27 | INFO | Размер файла: 653.97 KB
+2025-06-07 02:15:28 | INFO | Кодируем изображение в base64...
+2025-06-07 02:15:28 | INFO | Изображение успешно закодировано в base64 (размер: 892896 символов)
+2025-06-07 02:15:28 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:15:41 | INFO | Получен ответ от DeepSeek. Статус: 422, Причина: Unprocessable Entity
+2025-06-07 02:15:41 | ERROR | Ошибка API DeepSeek. Статус: 422, Причина: Unprocessable Entity
+2025-06-07 02:15:41 | ERROR | Тело ответа с ошибкой: Failed to deserialize the JSON body into the target type: messages[0]: data did not match any variant of untagged enum ChatCompletionRequestContent at line 1 column 894072
+2025-06-07 02:15:41 | ERROR | Ошибка при обработке файла 182719047_205813839_0_ЗИНГЕРМАН.pdf: Ошибка получения анализа от DeepSeek
+2025-06-07 02:15:41 | INFO | Обработка файла: 186584956_211289931_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:15:45 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\2186f56df0724cfe8476f5af7dd060bf_depersonalized.jpg
+2025-06-07 02:15:45 | INFO | Размер файла: 1216.01 KB
+2025-06-07 02:15:45 | INFO | Кодируем изображение в base64...
+2025-06-07 02:15:45 | INFO | Изображение успешно закодировано в base64 (размер: 1660264 символов)
+2025-06-07 02:15:45 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:16:01 | INFO | Обработка завершена

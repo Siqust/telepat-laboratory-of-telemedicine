@@ -4,6 +4,8 @@ from pathlib import Path
 from loguru import logger
 from processor import DocumentProcessor
 from data_manager import DataManager
+import cv2
+import uuid
 
 async def process_documents(clinic_name: str, data_manager: DataManager) -> None:
     """

@@ -1,0 +1,39 @@
+2025-06-07 02:21:13 | INFO | Данные успешно загружены из CSV файлов
+2025-06-07 02:21:14 | INFO | Найдено 34 файлов для обработки
+2025-06-07 02:21:14 | INFO | Обработка файла: 182719047_205813839_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:21:16 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\7facf5f277ea42bb9616c651078b82a0_depersonalized.jpg
+2025-06-07 02:21:16 | INFO | Размер файла: 653.97 KB
+2025-06-07 02:21:16 | INFO | Подготовка изображения для API...
+2025-06-07 02:21:16 | INFO | Изображение подготовлено (размер base64: 92768 символов)
+2025-06-07 02:21:16 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:21:18 | INFO | Получен ответ от DeepSeek. Статус: 402, Причина: Payment Required
+2025-06-07 02:21:18 | ERROR | Тело ответа с ошибкой: {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}
+2025-06-07 02:21:18 | ERROR | Детали ошибки API: {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}
+2025-06-07 02:21:18 | ERROR | Ошибка при обработке файла 182719047_205813839_0_ЗИНГЕРМАН.pdf: Ошибка получения анализа от DeepSeek
+2025-06-07 02:21:18 | INFO | Обработка файла: 186584956_211289931_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:21:22 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\7429c8cdb8024021917a2d160669f725_depersonalized.jpg
+2025-06-07 02:21:22 | INFO | Размер файла: 1216.01 KB
+2025-06-07 02:21:22 | INFO | Подготовка изображения для API...
+2025-06-07 02:21:22 | INFO | Изображение подготовлено (размер base64: 166696 символов)
+2025-06-07 02:21:22 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:21:23 | INFO | Получен ответ от DeepSeek. Статус: 402, Причина: Payment Required
+2025-06-07 02:21:23 | ERROR | Тело ответа с ошибкой: {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}
+2025-06-07 02:21:23 | ERROR | Детали ошибки API: {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}
+2025-06-07 02:21:23 | ERROR | Ошибка при обработке файла 186584956_211289931_0_ЗИНГЕРМАН.pdf: Ошибка получения анализа от DeepSeek
+2025-06-07 02:21:23 | INFO | Обработка файла: 186584956_211289931_1_ЗИНГЕРМАН.pdf
+2025-06-07 02:21:25 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\ec6b75a481024f85a7d74b3180b4b3d4_depersonalized.jpg
+2025-06-07 02:21:25 | INFO | Размер файла: 641.64 KB
+2025-06-07 02:21:25 | INFO | Подготовка изображения для API...
+2025-06-07 02:21:25 | INFO | Изображение подготовлено (размер base64: 97092 символов)
+2025-06-07 02:21:25 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:21:26 | INFO | Получен ответ от DeepSeek. Статус: 402, Причина: Payment Required
+2025-06-07 02:21:26 | ERROR | Тело ответа с ошибкой: {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}
+2025-06-07 02:21:26 | ERROR | Детали ошибки API: {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}
+2025-06-07 02:21:26 | ERROR | Ошибка при обработке файла 186584956_211289931_1_ЗИНГЕРМАН.pdf: Ошибка получения анализа от DeepSeek
+2025-06-07 02:21:26 | INFO | Обработка файла: 186584956_211289931_2_ЗИНГЕРМАН.pdf
+2025-06-07 02:21:28 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\6dd68881871f43f99f6e17db7011e304_depersonalized.jpg
+2025-06-07 02:21:28 | INFO | Размер файла: 583.54 KB
+2025-06-07 02:21:28 | INFO | Подготовка изображения для API...
+2025-06-07 02:21:28 | INFO | Изображение подготовлено (размер base64: 90424 символов)
+2025-06-07 02:21:28 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:21:29 | INFO | Обработка завершена

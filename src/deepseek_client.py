@@ -3,101 +3,179 @@ import json
 import aiohttp
 import asyncio
 from loguru import logger
-from typing import Optional
+from typing import Optional, Union
 from dotenv import load_dotenv
+from pathlib import Path
+import ssl
+from PIL import Image
+import io
+import base64
 
 class DeepSeekClient:
-    """Класс для работы с DeepSeek API"""
+    """Клиент для взаимодействия с DeepSeek API"""
     
     def __init__(self):
         """Инициализация клиента DeepSeek"""
         load_dotenv()
         self.api_key = os.getenv('DEEPSEEK_API_KEY')
+        # Обновленный URL API
+        self.base_url = "https://api.deepseek.com/v1/chat/completions"
+        
         if not self.api_key:
-            raise ValueError("DEEPSEEK_API_KEY не найден в переменных окружения")
+            logger.error("API ключ DeepSeek не найден в переменных окружения (DEEPSEEK_API_KEY)")
+            self.is_available = False
+            return
             
-        self.api_url = "https://api.deepseek.com/v1/chat/completions"  # Замените на реальный URL API
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        # Проверяем доступность API при инициализации
+        self.is_available = self._check_api_availability()
         
-    async def analyze_medical_report(self, image_path: str) -> Optional[str]:
-        """
-        Анализирует медицинский отчет с помощью DeepSeek API
-        
-        Args:
-            image_path: путь к изображению для анализа
-            
-        Returns:
-            str: результат анализа или None в случае ошибки
-        """
+    async def _check_api_availability(self) -> bool:
+        """Проверяет доступность API и валидность ключа"""
         try:
-            # Читаем изображение и конвертируем его в base64
-            with open(image_path, 'rb') as image_file:
-                import base64
-                image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+            # Настройки SSL и таймаута для aiohttp
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
             
-            # Формируем промпт для API
-            prompt = "Проанализируй анализы пациента и сделай выводы о его здоровье, если он болен - насколько велико отклонение от нормы"
+            timeout = aiohttp.ClientTimeout(total=30)
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
             
-            # Формируем данные для запроса
-            payload = {
-                "model": "deepseek-chat",  # Замените на актуальную модель
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                        ]
-                    }
-                ],
-                "max_tokens": 1000
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, headers=self.headers, json=payload) as response:
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}"
+                }
+                # Простой запрос для проверки доступности API
+                async with session.get(f"{self.base_url}/models", headers=headers) as response:
                     if response.status == 200:
-                        result = await response.json()
-                        return result['choices'][0]['message']['content']
+                        logger.info("DeepSeek API доступен и ключ валиден")
+                        return True
+                    elif response.status == 401:
+                        logger.error("Неверный API ключ DeepSeek")
+                        return False
                     else:
-                        error_text = await response.text()
-                        logger.error(f"Ошибка API DeepSeek: {response.status} - {error_text}")
-                        return None
-                        
+                        logger.error(f"DeepSeek API недоступен. Статус: {response.status}")
+                        return False
+        except aiohttp.ClientError as e:
+            logger.error(f"Ошибка при проверке доступности DeepSeek API: {str(e)}")
+            return False
         except Exception as e:
-            logger.error(f"Ошибка при анализе отчета: {str(e)}")
-            return None
-            
-    def save_analysis_result(self, image_path: str, analysis_result: str) -> bool:
+            logger.error(f"Неожиданная ошибка при проверке DeepSeek API: {str(e)}")
+            return False
+
+    async def analyze_medical_report(self, image_path: str) -> Union[str, None]:
         """
-        Сохраняет результат анализа в текстовый файл
+        Отправляет медицинский отчет (изображение) на анализ в DeepSeek
         
         Args:
-            image_path: путь к исходному изображению
-            analysis_result: результат анализа
+            image_path: путь к изображению медицинского отчета
             
         Returns:
-            bool: успешно ли сохранен результат
+            Union[str, None]: результат анализа в виде текста или None в случае ошибки
         """
+        if not self.is_available:
+            logger.error("DeepSeek API недоступен. Проверьте API ключ и доступность сервиса.")
+            return None
+
+        if not Path(image_path).exists():
+            logger.error(f"Файл изображения для анализа не найден: {image_path}")
+            return None
+
         try:
-            # Получаем имя файла без расширения
-            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            logger.info(f"Начинаем подготовку изображения для DeepSeek: {image_path}")
+            # Проверяем размер файла
+            file_size = Path(image_path).stat().st_size
+            logger.info(f"Размер файла: {file_size / 1024:.2f} KB")
             
-            # Формируем путь для сохранения результата
-            result_dir = os.path.join('ai-result', 'deepseek')
-            os.makedirs(result_dir, exist_ok=True)
+            if file_size > 10 * 1024 * 1024:  # 10MB
+                logger.warning("Файл слишком большой для отправки в DeepSeek API (>10MB)")
+                return None
+
+            # Настройки SSL и таймаута для aiohttp
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
             
-            result_path = os.path.join(result_dir, f"{base_name}.txt")
+            timeout = aiohttp.ClientTimeout(total=60)  # Увеличиваем таймаут до 60 секунд
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
             
-            # Сохраняем результат
-            with open(result_path, 'w', encoding='utf-8') as f:
-                f.write(analysis_result)
-                
-            logger.info(f"Результат анализа сохранен в {result_path}")
-            return True
-            
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                try:
+                    # Подготавливаем изображение в правильном формате
+                    logger.info("Подготовка изображения для API...")
+                    with Image.open(image_path) as img:
+                        # Уменьшаем размер изображения если оно слишком большое
+                        max_size = 1024  # Максимальный размер стороны
+                        if max(img.size) > max_size:
+                            ratio = max_size / max(img.size)
+                            new_size = tuple(int(dim * ratio) for dim in img.size)
+                            img = img.resize(new_size, Image.Resampling.LANCZOS)
+                        
+                        # Конвертируем в JPEG с оптимальным качеством
+                        buffer = io.BytesIO()
+                        img.save(buffer, format='JPEG', quality=85, optimize=True)
+                        image_data = buffer.getvalue()
+                        base64_image = base64.b64encode(image_data).decode("utf-8")
+                    
+                    logger.info(f"Изображение подготовлено (размер base64: {len(base64_image)} символов)")
+
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.api_key}"
+                    }
+
+                    # Упрощенный формат запроса
+                    payload = {
+                        "model": "deepseek-chat",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": "Проанализируй этот медицинский отчет. Извлеки ключевую информацию: диагноз, назначенные лекарства, процедуры, рекомендации. Предоставь структурированный ответ в формате JSON: {\"diagnosis\": [...], \"medications\": [...], \"procedures\": [...], \"recommendations\": [...]}",
+                                "images": [f"data:image/jpeg;base64,{base64_image}"]
+                            }
+                        ],
+                        "max_tokens": 2000,
+                        "temperature": 0.7
+                    }
+
+                    logger.info("Отправляем запрос в DeepSeek API...")
+                    logger.debug(f"URL запроса: {self.base_url}")
+                    logger.debug(f"Используемая модель: {payload['model']}")
+                    logger.debug(f"Размер payload: {len(str(payload))} байт")
+                    
+                    # Проверяем размер base64 изображения
+                    base64_size = len(base64_image)
+                    if base64_size > 10 * 1024 * 1024:  # 10MB
+                        logger.error(f"Размер base64 изображения слишком большой: {base64_size / 1024 / 1024:.2f} MB")
+                        return None
+                    
+                    async with session.post(self.base_url, headers=headers, json=payload) as response:
+                        response_text = await response.text()
+                        logger.info(f"Получен ответ от DeepSeek. Статус: {response.status}, Причина: {response.reason}")
+                        
+                        if response.status != 200:
+                            logger.error(f"Тело ответа с ошибкой: {response_text}")
+                            # Пробуем получить более подробную информацию об ошибке
+                            try:
+                                error_data = json.loads(response_text)
+                                if 'error' in error_data:
+                                    logger.error(f"Детали ошибки API: {error_data['error']}")
+                            except:
+                                pass
+                            return None
+
+                except aiohttp.ClientError as e:
+                    logger.error(f"Ошибка HTTP запроса к DeepSeek API: {str(e)}")
+                    return None
+                except asyncio.TimeoutError:
+                    logger.error("Превышено время ожидания ответа от DeepSeek API (30 секунд)")
+                    return None
+                except Exception as e:
+                    logger.error(f"Неожиданная ошибка при работе с DeepSeek API: {str(e)}")
+                    return None
+
+        except FileNotFoundError:
+            logger.error(f"Файл не найден при чтении для base64 кодирования: {image_path}")
+            return None
         except Exception as e:
-            logger.error(f"Ошибка при сохранении результата анализа: {str(e)}")
-            return False 
+            logger.error(f"Критическая ошибка при анализе DeepSeek: {str(e)}")
+            return None 

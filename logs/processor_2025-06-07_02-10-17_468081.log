@@ -1,0 +1,160 @@
+2025-06-07 02:10:17 | INFO | Данные успешно загружены из CSV файлов
+2025-06-07 02:10:19 | INFO | Найдено 34 файлов для обработки
+2025-06-07 02:10:19 | INFO | Обработка файла: 182719047_205813839_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:21 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\50bc9eaab8f44a848a33b932dc78720c_depersonalized.jpg
+2025-06-07 02:10:21 | INFO | Размер файла: 653.97 KB
+2025-06-07 02:10:21 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:21 | INFO | Изображение успешно закодировано в base64 (размер: 892896 символов)
+2025-06-07 02:10:21 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:21 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:21 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\50bc9eaab8f44a848a33b932dc78720c_depersonalized.jpg
+2025-06-07 02:10:21 | INFO | Обработка файла: 186584956_211289931_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:24 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\86d5d4f2c2e14e209e19a3c31e24a77a_depersonalized.jpg
+2025-06-07 02:10:24 | INFO | Размер файла: 1216.01 KB
+2025-06-07 02:10:24 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:24 | INFO | Изображение успешно закодировано в base64 (размер: 1660264 символов)
+2025-06-07 02:10:24 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:24 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:24 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\86d5d4f2c2e14e209e19a3c31e24a77a_depersonalized.jpg
+2025-06-07 02:10:24 | INFO | Обработка файла: 186584956_211289931_1_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:26 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\3686adf96c4c43aea48279b195c3e14b_depersonalized.jpg
+2025-06-07 02:10:26 | INFO | Размер файла: 641.64 KB
+2025-06-07 02:10:26 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:26 | INFO | Изображение успешно закодировано в base64 (размер: 876056 символов)
+2025-06-07 02:10:26 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:26 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:26 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\3686adf96c4c43aea48279b195c3e14b_depersonalized.jpg
+2025-06-07 02:10:26 | INFO | Обработка файла: 186584956_211289931_2_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:28 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\ec9135d739cf4bc9b2bfb4e070cf6778_depersonalized.jpg
+2025-06-07 02:10:28 | INFO | Размер файла: 583.54 KB
+2025-06-07 02:10:28 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:28 | INFO | Изображение успешно закодировано в base64 (размер: 796720 символов)
+2025-06-07 02:10:28 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:28 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:28 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\ec9135d739cf4bc9b2bfb4e070cf6778_depersonalized.jpg
+2025-06-07 02:10:28 | INFO | Обработка файла: 186584978_211341730_0_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:30 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\e832e5ed2386457e8c2bb320ca2414dc_depersonalized.jpg
+2025-06-07 02:10:30 | INFO | Размер файла: 671.46 KB
+2025-06-07 02:10:30 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:30 | INFO | Изображение успешно закодировано в base64 (размер: 916764 символов)
+2025-06-07 02:10:30 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:30 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:30 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\e832e5ed2386457e8c2bb320ca2414dc_depersonalized.jpg
+2025-06-07 02:10:30 | INFO | Обработка файла: 186584978_211341730_1_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:31 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\17de0918574e4031b90a50ec32d98b17_depersonalized.jpg
+2025-06-07 02:10:31 | INFO | Размер файла: 573.36 KB
+2025-06-07 02:10:31 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:31 | INFO | Изображение успешно закодировано в base64 (размер: 782832 символов)
+2025-06-07 02:10:31 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:31 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:31 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\17de0918574e4031b90a50ec32d98b17_depersonalized.jpg
+2025-06-07 02:10:31 | INFO | Обработка файла: 186584978_211341730_2_ЗИНГЕРМАН.pdf
+2025-06-07 02:10:33 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\33a5ed5115814c3fb2cae70fe6187019_depersonalized.jpg
+2025-06-07 02:10:33 | INFO | Размер файла: 541.67 KB
+2025-06-07 02:10:33 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:33 | INFO | Изображение успешно закодировано в base64 (размер: 739556 символов)
+2025-06-07 02:10:33 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:33 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:33 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\33a5ed5115814c3fb2cae70fe6187019_depersonalized.jpg
+2025-06-07 02:10:33 | INFO | Обработка файла: 2021-07-26 Общий клинический анализ.pdf
+2025-06-07 02:10:36 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\efab1fa778eb45b2b259c6994f7b8c49_depersonalized.jpg
+2025-06-07 02:10:36 | INFO | Размер файла: 639.79 KB
+2025-06-07 02:10:36 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:36 | INFO | Изображение успешно закодировано в base64 (размер: 873532 символов)
+2025-06-07 02:10:36 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:36 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:36 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\efab1fa778eb45b2b259c6994f7b8c49_depersonalized.jpg
+2025-06-07 02:10:36 | INFO | Обработка файла: 2021-07-27 Глюкоза.pdf
+2025-06-07 02:10:37 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\a1130d334e0c424fba9c5c0e9cc95ccb_depersonalized.jpg
+2025-06-07 02:10:37 | INFO | Размер файла: 190.97 KB
+2025-06-07 02:10:37 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:37 | INFO | Изображение успешно закодировано в base64 (размер: 260744 символов)
+2025-06-07 02:10:37 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:37 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:37 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\a1130d334e0c424fba9c5c0e9cc95ccb_depersonalized.jpg
+2025-06-07 02:10:37 | INFO | Обработка файла: 2021-07-27 Гормоны.pdf
+2025-06-07 02:10:38 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\508fabdae3dd4b2494bedb1e1c2573ad_depersonalized.jpg
+2025-06-07 02:10:38 | INFO | Размер файла: 206.43 KB
+2025-06-07 02:10:38 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:38 | INFO | Изображение успешно закодировано в base64 (размер: 281844 символов)
+2025-06-07 02:10:38 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:38 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:38 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\508fabdae3dd4b2494bedb1e1c2573ad_depersonalized.jpg
+2025-06-07 02:10:38 | INFO | Обработка файла: INVITRO_156221690.pdf
+2025-06-07 02:10:40 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\59ef3e40d6be4c5381c2d55202f2029d_depersonalized.jpg
+2025-06-07 02:10:40 | INFO | Размер файла: 479.90 KB
+2025-06-07 02:10:40 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:40 | INFO | Изображение успешно закодировано в base64 (размер: 655228 символов)
+2025-06-07 02:10:40 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:40 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:40 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\59ef3e40d6be4c5381c2d55202f2029d_depersonalized.jpg
+2025-06-07 02:10:40 | INFO | Обработка файла: INVITRO_157650699.pdf
+2025-06-07 02:10:43 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\bbdcd45df5d8444fb7826e31c366a146_depersonalized.jpg
+2025-06-07 02:10:43 | INFO | Размер файла: 1285.57 KB
+2025-06-07 02:10:43 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:43 | INFO | Изображение успешно закодировано в base64 (размер: 1755236 символов)
+2025-06-07 02:10:43 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:43 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:43 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\bbdcd45df5d8444fb7826e31c366a146_depersonalized.jpg
+2025-06-07 02:10:43 | INFO | Обработка файла: INVITRO_159367037.pdf
+2025-06-07 02:10:45 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\23efdc75c17840c3be0dfef37bb4de3d_depersonalized.jpg
+2025-06-07 02:10:45 | INFO | Размер файла: 573.46 KB
+2025-06-07 02:10:45 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:45 | INFO | Изображение успешно закодировано в base64 (размер: 782968 символов)
+2025-06-07 02:10:45 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:45 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:45 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\23efdc75c17840c3be0dfef37bb4de3d_depersonalized.jpg
+2025-06-07 02:10:45 | INFO | Обработка файла: INVITRO_159914634 (1).pdf
+2025-06-07 02:10:47 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\96b0ea49a29f459f9f227adef37fc83f_depersonalized.jpg
+2025-06-07 02:10:47 | INFO | Размер файла: 738.70 KB
+2025-06-07 02:10:47 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:47 | INFO | Изображение успешно закодировано в base64 (размер: 1008576 символов)
+2025-06-07 02:10:47 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:47 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:47 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\96b0ea49a29f459f9f227adef37fc83f_depersonalized.jpg
+2025-06-07 02:10:47 | INFO | Обработка файла: INVITRO_159914634.pdf
+2025-06-07 02:10:48 | ERROR | Ошибка при обработке файла INVITRO_159914634.pdf: [WinError 32] Процесс не может получить доступ к файлу, так как этот файл занят другим процессом: 'C:\\Users\\836D~1\\AppData\\Local\\Temp\\tess_e4kp8t80_input.PNG'
+2025-06-07 02:10:48 | INFO | Обработка файла: INVITRO_172321946.pdf
+2025-06-07 02:10:51 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\1a8375eed03f4a9d945bd61a044e923a_depersonalized.jpg
+2025-06-07 02:10:51 | INFO | Размер файла: 1262.16 KB
+2025-06-07 02:10:51 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:51 | INFO | Изображение успешно закодировано в base64 (размер: 1723276 символов)
+2025-06-07 02:10:51 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:51 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:51 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\1a8375eed03f4a9d945bd61a044e923a_depersonalized.jpg
+2025-06-07 02:10:51 | INFO | Обработка файла: INVITRO_186584978.pdf
+2025-06-07 02:10:53 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\ca511e704afe4e68b456f8d18d27c4ee_depersonalized.jpg
+2025-06-07 02:10:53 | INFO | Размер файла: 549.87 KB
+2025-06-07 02:10:53 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:53 | INFO | Изображение успешно закодировано в base64 (размер: 750760 символов)
+2025-06-07 02:10:53 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:53 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:53 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\ca511e704afe4e68b456f8d18d27c4ee_depersonalized.jpg
+2025-06-07 02:10:53 | INFO | Обработка файла: INVITRO_225411791 (1).pdf
+2025-06-07 02:10:56 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\5d4f168f82e44f50b2989ef95178a4a5_depersonalized.jpg
+2025-06-07 02:10:56 | INFO | Размер файла: 757.42 KB
+2025-06-07 02:10:56 | INFO | Кодируем изображение в base64...
+2025-06-07 02:10:56 | INFO | Изображение успешно закодировано в base64 (размер: 1034132 символов)
+2025-06-07 02:10:56 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:10:56 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:10:56 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\5d4f168f82e44f50b2989ef95178a4a5_depersonalized.jpg
+2025-06-07 02:10:56 | INFO | Обработка файла: INVITRO_225411791.pdf
+2025-06-07 02:10:57 | ERROR | Ошибка при обработке файла INVITRO_225411791.pdf: [WinError 32] Процесс не может получить доступ к файлу, так как этот файл занят другим процессом: 'C:\\Users\\836D~1\\AppData\\Local\\Temp\\tess_y2kfe6cf_input.PNG'
+2025-06-07 02:10:57 | INFO | Обработка файла: INVITRO_247427636 (1).pdf
+2025-06-07 02:11:00 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\afe89f0c22ab4b96beead4cf476e9631_depersonalized.jpg
+2025-06-07 02:11:00 | INFO | Размер файла: 955.40 KB
+2025-06-07 02:11:00 | INFO | Кодируем изображение в base64...
+2025-06-07 02:11:00 | INFO | Изображение успешно закодировано в base64 (размер: 1304440 символов)
+2025-06-07 02:11:00 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:11:00 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:11:00 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\afe89f0c22ab4b96beead4cf476e9631_depersonalized.jpg
+2025-06-07 02:11:00 | INFO | Обработка файла: INVITRO_247427636 (2).pdf
+2025-06-07 02:11:03 | INFO | Начинаем подготовку изображения для DeepSeek: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\08f585cfba7147bd89c1d998db9ec681_depersonalized.jpg
+2025-06-07 02:11:03 | INFO | Размер файла: 955.40 KB
+2025-06-07 02:11:03 | INFO | Кодируем изображение в base64...
+2025-06-07 02:11:03 | INFO | Изображение успешно закодировано в base64 (размер: 1304440 символов)
+2025-06-07 02:11:03 | INFO | Отправляем запрос в DeepSeek API...
+2025-06-07 02:11:03 | ERROR | Ошибка HTTP запроса к DeepSeek API: Cannot connect to host api.deepseek.ai:443 ssl:default [getaddrinfo failed]
+2025-06-07 02:11:03 | INFO | Файл успешно обработан: C:\Users\Администратор\Documents\0_PROJECTS\telepat-laboratory-of-telemedicine\output\08f585cfba7147bd89c1d998db9ec681_depersonalized.jpg
+2025-06-07 02:11:03 | INFO | Обработка файла: INVITRO_247427636.pdf
+2025-06-07 02:11:05 | INFO | Обработка завершена
