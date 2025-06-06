@@ -731,7 +731,9 @@ class DocumentProcessor:
             masked_image = self._mask_sensitive_data(image, sensitive_regions)
 
             # Сохраняем деперсонализированное изображение
-            output_filename = file_path.stem + '_depersonalized.jpg'
+            # Генерируем уникальный ID для имени файла, чтобы избежать утечки данных через исходное имя
+            unique_id = uuid.uuid4().hex
+            output_filename = f'{unique_id}_depersonalized.jpg'
             output_path = output_dir / output_filename
             
             logger.info(f"Подготовка к сохранению деперсонализированного изображения: {output_path}")
