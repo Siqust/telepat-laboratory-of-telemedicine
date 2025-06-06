@@ -957,19 +957,20 @@ class DocumentProcessor:
             return []
 
     def _is_allowed_word(self, word: str, text_data: List[Dict], current_index: int) -> bool:
+        """
+        Проверяет, является ли слово разрешенным (не персональными данными)
+        
+        Args:
+            word: слово для проверки
+            text_data: все слова в документе
+            current_index: индекс текущего слова
+            
+        Returns:
+            bool: является ли слово разрешенным
+        """
+        # Базовая проверка длины
         if not word or len(word.strip()) < 2:
             logger.info(f"Слово '{word}' слишком короткое - пропускаем")
-            return True
-
-        # Проверяем числовые данные
-        is_personal_data, data_type = self._is_numeric_personal_data(word)
-        if is_personal_data:
-            logger.info(f"Слово '{word}' определено как {data_type} - маскируем")
-            return False
-
-        # Проверяем, является ли слово медицинским термином
-        if self._is_medical_term(word):
-            logger.info(f"Слово '{word}' определено как медицинский термин - пропускаем")
             return True
 
         # Проверяем, начинается ли слово с заглавной буквы
@@ -984,6 +985,11 @@ class DocumentProcessor:
 
         word_lower = letters_only.lower()
         
+        # Сначала проверяем, является ли слово медицинским термином
+        if self._is_medical_term(word):
+            logger.info(f"Слово '{word}' определено как медицинский термин - пропускаем")
+            return True
+            
         # Проверяем как русский вариант, так и транслитерированный
         is_surname = (word_lower in self.russian_surnames or 
                      word_lower in self.translit_surnames or
@@ -994,20 +1000,68 @@ class DocumentProcessor:
         logger.info(f"- В списке транслитерированных фамилий: {word_lower in self.translit_surnames}")
         logger.info(f"- Транслитерация в списке: {transliterate(word_lower) in self.translit_surnames}")
 
+        # Если слово не похоже на фамилию, проверяем остальные контексты
         if not is_surname:
+            # Проверяем на инициалы только если слово короткое
+            if len(word) <= 2 and word[0].upper() == word[0]:
+                context = []
+                for i in range(max(0, current_index-2), min(len(text_data), current_index+3)):
+                    if i != current_index:
+                        context.append(text_data[i]['text'].strip())
+                        
+                next_word = next((w for w in context if w.strip()), '')
+                if next_word and next_word.endswith('.'):
+                    logger.info(f"Слово '{word}' определено как инициал - маскируем")
+                    return False
+                    
             logger.info(f"Слово '{word}' не похоже на фамилию - пропускаем")
             return True
 
-        # Анализируем контекст слова
+        # Если слово похоже на фамилию, анализируем контекст более тщательно
         start_idx = max(0, current_index - 5)
         end_idx = min(len(text_data), current_index + 6)
         context_words = [w['text'] for w in text_data[start_idx:end_idx]]
         context_text = ' '.join(context_words)
         
         logger.info(f"Проверка слова '{word}' в контексте: '{context_text}'")
-        logger.info(f"Индекс слова в контексте: {current_index - start_idx}")
-        logger.info(f"Слова в контексте: {context_words}")
         
+        # Проверяем на типичные медицинские контексты, где фамилия может быть не персональными данными
+        medical_contexts = [
+            'врач', 'доктор', 'профессор', 'академик', 'заведующий',
+            'главный', 'старший', 'младший', 'ординатор', 'интерн'
+        ]
+        
+        # Проверяем только ближайший контекст (2 слова слева и справа)
+        immediate_context = ' '.join(context_words[max(0, current_index-start_idx-2):min(len(context_words), current_index-start_idx+3)])
+        
+        is_medical_context = False
+        for ctx in medical_contexts:
+            if ctx in immediate_context.lower():
+                # Проверяем, не является ли это частью полного имени врача
+                if any(w.lower() in ['врач', 'доктор'] for w in context_words[max(0, current_index-start_idx-1):current_index-start_idx+2]):
+                    # Если перед фамилией стоит "врач" или "доктор", это может быть имя врача
+                    # Проверяем, есть ли перед этим имя или отчество
+                    prev_words = context_words[max(0, current_index-start_idx-3):current_index-start_idx]
+                    if any(w[0].isupper() for w in prev_words):
+                        is_medical_context = True
+                        logger.info(f"Слово '{word}' определено как часть имени врача - пропускаем")
+                        break
+        
+        if is_medical_context:
+            return True
+        
+        # Проверяем на шаблоны медицинских документов только в ближайшем контексте
+        template_patterns = [
+            r'(?:^|\s)пациент[а-я]*\s+[А-Я][а-я]+(?:\s|$)',  # "пациент Иванов"
+            r'(?:^|\s)больной\s+[А-Я][а-я]+(?:\s|$)',         # "больной Иванов"
+            r'(?:^|\s)ф\.и\.о\.\s*[А-Я][а-я]+(?:\s|$)',       # "Ф.И.О. Иванов"
+        ]
+        
+        if any(re.search(pattern, immediate_context, re.IGNORECASE) for pattern in template_patterns):
+            logger.info(f"Слово '{word}' найдено в шаблоне медицинского документа - маскируем")
+            return False
+        
+        # Анализируем контекст через модели
         entities = self._analyze_context(context_text)
         
         # Считаем, сколько моделей определили слово как имя собственное
@@ -1021,9 +1075,9 @@ class DocumentProcessor:
 
         # Проверяем, является ли слово частью полного имени
         is_part_of_full_name = False
-        if len(context_words) >= 3:  # Если в контексте достаточно слов для полного имени
-            # Ищем паттерн "Фамилия Имя Отчество"
-            for i in range(len(context_words) - 2):
+        if len(context_words) >= 3:
+            # Ищем паттерн "Фамилия Имя Отчество" только в ближайшем контексте
+            for i in range(max(0, current_index-start_idx-1), min(len(context_words)-2, current_index-start_idx+2)):
                 if (context_words[i][0].isupper() and 
                     context_words[i+1][0].isupper() and 
                     context_words[i+2][0].isupper()):
@@ -1152,9 +1206,41 @@ class DocumentProcessor:
         
         # Проверяем длину
         if len(digits_only) not in self.numeric_lengths:
+            # Дополнительные проверки из project2
+            # Проверка на числа в формате даты (например, 01021990)
+            if len(text) == 8 and text.isdigit():
+                try:
+                    day = int(text[:2])
+                    month = int(text[2:4])
+                    year = int(text[4:])
+                    if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
+                        return True, "Дата рождения"
+                except:
+                    pass
+                    
+            # Проверка на номера телефонов в разных форматах
+            phone_patterns = [
+                r'\+?[78][\s\-\(]?\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}',  # +7(999)123-45-67
+                r'\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}',                   # 999-123-45-67
+            ]
+            
+            for pattern in phone_patterns:
+                if re.match(pattern, text):
+                    return True, "Номер телефона"
+                    
+            # Проверка на номера медицинских карт
+            med_card_patterns = [
+                r'[А-Я]\d{6}',  # А123456
+                r'\d{6}[А-Я]',  # 123456А
+            ]
+            
+            for pattern in med_card_patterns:
+                if re.match(pattern, text):
+                    return True, "Номер медицинской карты"
+                    
             return False, ""
             
-        # Проверяем каждый паттерн
+        # Проверяем каждый паттерн (существующая логика)
         for data_type, pattern_info in self.numeric_patterns.items():
             if re.match(pattern_info['pattern'], text):
                 return True, pattern_info['description']
