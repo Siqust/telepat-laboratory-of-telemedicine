@@ -6,3 +6,4 @@ output
 __pycache__/
 *.pyc
 gigachat_config.txt
+logs
