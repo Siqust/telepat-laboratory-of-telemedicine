@@ -1,5 +1,7 @@
 import os
 import asyncio
+import logging
+import shutil
 from pathlib import Path
 from loguru import logger
 from processor import DocumentProcessor
@@ -8,6 +10,7 @@ import cv2
 import uuid
 from deepseek_client import DeepSeekClient
 from gigachat_client import GigaChatClient
+from chatgpt_client import ChatGPTClient
 import json
 
 def setup_logging():
@@ -54,47 +57,105 @@ async def process_documents(clinic_name: str, data_manager: DataManager) -> None
         
     logger.info(f"Найдено {len(input_files)} файлов для обработки")
     
-    # Обрабатываем каждый файл последовательно
-    for file_path in input_files:
-        logger.info(f"Обработка файла: {file_path.name}")
-        logger.debug(f"Полный путь к входному файлу: {file_path.absolute()}")
-        
-        try:
-            # Сначала обрабатываем документ через DocumentProcessor
-            output_path, extracted_data = await processor.process_document(
-                file_path=str(file_path),
-                clinic_name=clinic_name,
-                output_dir=str(output_dir)
-            )
+    # Создаем клиенты для API
+    deepseek = DeepSeekClient()
+    gigachat = GigaChatClient()
+    chatgpt = ChatGPTClient()
+    
+    try:
+        # Обрабатываем каждый файл последовательно
+        for file_path in input_files:
+            logger.info(f"Обработка файла: {file_path.name}")
+            logger.debug(f"Полный путь к входному файлу: {file_path.absolute()}")
             
-            if output_path:
-                logger.info(f"Файл успешно обработан и сохранен: {output_path}")
-                logger.debug(f"Полный путь к деперсонализированному файлу: {Path(output_path).absolute()}")
+            try:
+                # Сначала обрабатываем документ через DocumentProcessor
+                output_path, extracted_data = await processor.process_document(
+                    file_path=str(file_path),
+                    clinic_name=clinic_name,
+                    output_dir=str(output_dir)
+                )
                 
-                # Проверяем существование файла
-                if not Path(output_path).exists():
-                    logger.error(f"Деперсонализированный файл не найден: {output_path}")
-                    continue
+                if output_path and Path(output_path).exists():
+                    logger.info(f"Файл успешно обработан и сохранен: {output_path}")
+                    logger.debug(f"Полный путь к деперсонализированному файлу: {Path(output_path).absolute()}")
                     
-                # Проверяем размер файла
-                file_size = Path(output_path).stat().st_size
-                logger.debug(f"Размер деперсонализированного файла: {file_size} байт")
+                    # Проверяем размер файла
+                    file_size = Path(output_path).stat().st_size
+                    logger.debug(f"Размер деперсонализированного файла: {file_size} байт")
+                    
+                    # Затем отправляем деперсонализированный файл на анализ через все доступные API
+                    logger.info(f"Отправка деперсонализированного файла на анализ: {output_path}")
+                    
+                    # Создаем директории для результатов
+                    for dir_name in ['ai-result/deepseek', 'ai-result/gigachat', 'ai-result/chatgpt']:
+                        Path(dir_name).mkdir(parents=True, exist_ok=True)
+                    
+                    # Получаем базовое имя файла без расширения
+                    base_name = Path(output_path).stem
+                    
+                    # Пробуем анализ через DeepSeek
+                    try:
+                        logger.info(f"Начинаем анализ через DeepSeek: {output_path}")
+                        deepseek_result = await deepseek.analyze_medical_report(output_path)
+                        if deepseek_result:
+                            output_file = Path(f"ai-result/deepseek/{base_name}_deepseek.json")
+                            with open(output_file, 'w', encoding='utf-8') as f:
+                                json.dump(deepseek_result, f, ensure_ascii=False, indent=2)
+                            logger.info(f"Результат DeepSeek сохранен в {output_file}")
+                    except Exception as e:
+                        logger.error(f"Ошибка при анализе через DeepSeek: {str(e)}")
+                    
+                    # Пробуем анализ через GigaChat
+                    try:
+                        logger.info(f"Начинаем анализ через GigaChat: {output_path}")
+                        gigachat_result = await gigachat.analyze_medical_report(output_path)
+                        if gigachat_result:
+                            output_file = Path(f"ai-result/gigachat/{base_name}_gigachat.json")
+                            with open(output_file, 'w', encoding='utf-8') as f:
+                                json.dump(gigachat_result, f, ensure_ascii=False, indent=2)
+                            logger.info(f"Результат GigaChat сохранен в {output_file}")
+                    except Exception as e:
+                        logger.error(f"Ошибка при анализе через GigaChat: {str(e)}")
+                    
+                    # Пробуем анализ через ChatGPT
+                    try:
+                        logger.info(f"Начинаем анализ через ChatGPT: {output_path}")
+                        chatgpt_result = await chatgpt.analyze_medical_report(
+                            output_path,
+                            prompt="К сообщению приложены изображения с результатами анализов. Выходят ли какие то параметры за реферсные значения? Ответь на первой строке да или нет, далее приведи список отклонений по одному на строке."
+                        )
+                        if chatgpt_result:
+                            output_file = Path(f"ai-result/chatgpt/{base_name}_chatgpt.txt")
+                            with open(output_file, 'w', encoding='utf-8') as f:
+                                f.write(chatgpt_result)
+                            logger.info(f"Результат ChatGPT сохранен в {output_file}")
+                            logger.debug(f"Содержимое ответа ChatGPT: {chatgpt_result[:200]}...")
+                    except Exception as e:
+                        logger.error(f"Ошибка при анализе через ChatGPT: {str(e)}")
+                        logger.exception("Полный стек ошибки:")
+                    
+                    # Перемещаем обработанный файл в архив
+                    archive_dir = input_dir / "archive"
+                    archive_dir.mkdir(exist_ok=True)
+                    shutil.move(file_path, archive_dir / file_path.name)
+                    logger.info(f"Файл {file_path.name} перемещен в архив")
+                else:
+                    logger.error(f"Не удалось получить или найти деперсонализированный файл для {file_path.name}")
                 
-                # Затем отправляем деперсонализированный файл на анализ через DeepSeek и GigaChat
-                logger.info(f"Отправка деперсонализированного файла на анализ: {output_path}")
-                analysis_results = await process_medical_report(output_path)
-                
-                if analysis_results['deepseek']:
-                    logger.info("Анализ DeepSeek успешно завершен")
-                if analysis_results['gigachat']:
-                    logger.info("Анализ GigaChat успешно завершен")
-            else:
-                logger.error("Не удалось получить путь к деперсонализированному файлу")
-            
+            except Exception as e:
+                logger.error(f"Ошибка при обработке файла {file_path.name}: {str(e)}")
+                logger.exception("Полный стек ошибки:")
+                continue
+    finally:
+        # Закрываем клиенты API, которые поддерживают закрытие
+        try:
+            if hasattr(gigachat, 'close'):
+                await gigachat.close()
+            if hasattr(chatgpt, 'close'):
+                await chatgpt.close()
         except Exception as e:
-            logger.error(f"Ошибка при обработке файла {file_path.name}: {str(e)}")
-            logger.exception("Полный стек ошибки:")
-            continue
+            logger.error(f"Ошибка при закрытии клиентов API: {str(e)}")
 
 async def process_medical_report(image_path: str):
     """Обрабатывает медицинский отчет через DeepSeek и GigaChat"""
@@ -173,19 +234,9 @@ async def main():
         # Сохраняем все данные перед завершением
         data_manager._save_data()
         
-        # Пример использования
-        image_path = "path/to/your/medical/report.jpg"  # Замените на реальный путь
-        results = await process_medical_report(image_path)
-        
-        # Вывод результатов
-        if results['deepseek']:
-            logger.info("DeepSeek анализ успешно завершен")
-        if results['gigachat']:
-            logger.info("GigaChat анализ успешно завершен")
-        
     except Exception as e:
         logger.error(f"Ошибка при выполнении: {str(e)}")
-        raise
+        logger.exception("Полный стек ошибки:")
     finally:
         logger.info("Обработка завершена")
 
