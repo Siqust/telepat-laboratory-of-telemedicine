@@ -113,7 +113,7 @@ class DocumentProcessor:
     async def __init__(self, data_manager: DataManager):
         """
         Инициализация процессора документов
-        
+
         Args:
             data_manager: менеджер данных для сохранения результатов
         """
@@ -208,7 +208,7 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Ошибка при загрузке фамилий: {e}")
             self.surnames = set()
-            self.translit_surnames = set()
+        self.translit_surnames = set()
 
     async def _load_cities(self) -> None:
         """
@@ -307,8 +307,8 @@ class DocumentProcessor:
                             except PermissionError:
                                 logger.warning(
                                     f"Файл {file} все еще используется, пропускаем")
-                                continue
-                            except Exception as e:
+                        continue
+                    except Exception as e:
                                 logger.warning(
                                     f"Не удалось удалить файл {file}: {str(e)}")
                                 continue
@@ -316,12 +316,12 @@ class DocumentProcessor:
                         logger.warning(
                             f"Ошибка при обработке файла {file}: {str(e)}")
                         continue
-
+                
                 # Пробуем удалить саму директорию
                 try:
                     temp_dir.rmdir()
                     logger.debug("Временная директория успешно удалена")
-                except Exception as e:
+        except Exception as e:
                     logger.warning(
                         f"Не удалось удалить временную директорию: {str(e)}")
 
@@ -551,8 +551,8 @@ class DocumentProcessor:
             logger.info(f"Анализ DeepSeek сохранен в {analysis_file}")
             
             return str(output_file), analysis_result
-
-        except Exception as e:
+                
+            except Exception as e:
             logger.error(f"Ошибка при обработке документа {file_path}: {str(e)}")
             if output_file and output_file.exists():
                 try:
@@ -573,10 +573,10 @@ class DocumentProcessor:
     async def analyze_document(self, file_path: str) -> Optional[str]:
         """
         Анализирует деперсонализированный документ через DeepSeek
-
+        
         Args:
             file_path: путь к деперсонализированному документу
-
+            
         Returns:
             Optional[str]: результат анализа или None в случае ошибки
         """
@@ -769,11 +769,11 @@ class DocumentProcessor:
         mask_context = False
 
         try:
-            for i, word in enumerate(text_data):
-                try:
-                    word_text = word['text'].strip()
-                    if not word_text:
-                        continue
+        for i, word in enumerate(text_data):
+            try:
+                word_text = word['text'].strip()
+                if not word_text:
+                    continue
 
                     # Проверяем на город (в любом регистре)
                     if word_text in self.cities_to_mask:
@@ -794,43 +794,43 @@ class DocumentProcessor:
                         logger.info(f"Маскирование слова в контексте города: {word_text}")
                         continue
 
-                    # Проверяем числовые данные
-                    is_personal_data, data_type = self._is_numeric_personal_data(word_text)
-                    if is_personal_data:
-                        sensitive_regions.append({
-                            'text': word_text,
-                            'confidence': word.get('conf', 0),
-                            'left': word.get('left', 0),
-                            'top': word.get('top', 0),
-                            'width': word.get('width', 0),
-                            'height': word.get('height', 0),
-                            'type': data_type
-                        })
-                        logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
-                        continue
+                # Проверяем числовые данные
+                is_personal_data, data_type = self._is_numeric_personal_data(word_text)
+                if is_personal_data:
+                    sensitive_regions.append({
+                        'text': word_text,
+                        'confidence': word.get('conf', 0),
+                        'left': word.get('left', 0),
+                        'top': word.get('top', 0),
+                        'width': word.get('width', 0),
+                        'height': word.get('height', 0),
+                        'type': data_type
+                    })
+                    logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
+                    continue
 
                     # Проверяем на фамилии и персональные данные
-                    if not self._is_allowed_word(word_text, text_data, i):
-                        found_surnames.append(word_text)
-                        sensitive_regions.append({
-                            'text': word_text,
-                            'confidence': word.get('conf', 0),
-                            'left': word.get('left', 0),
-                            'top': word.get('top', 0),
-                            'width': word.get('width', 0),
-                            'height': word.get('height', 0),
-                            'type': 'surname'
-                        })
+                if not self._is_allowed_word(word_text, text_data, i):
+                    found_surnames.append(word_text)
+                    sensitive_regions.append({
+                        'text': word_text,
+                        'confidence': word.get('conf', 0),
+                        'left': word.get('left', 0),
+                        'top': word.get('top', 0),
+                        'width': word.get('width', 0),
+                        'height': word.get('height', 0),
+                        'type': 'surname'
+                    })
                         logger.info(f"Найдена фамилия для маскирования: {word_text}")
 
                     # Проверяем на медицинские термины
-                    for pattern_name, pattern in self.medical_patterns.items():
+            for pattern_name, pattern in self.medical_patterns.items():
                         matches = re.finditer(pattern, word_text)
-                        for match in matches:
+                for match in matches:
                             value = match.group(1) if match.groups() else match.group(0)
                             if value:
-                                medical_data.append({
-                                    'type': pattern_name,
+                    medical_data.append({
+                        'type': pattern_name,
                                     'value': value,
                                     'text': word_text,
                                     'confidence': word.get('conf', 0),
@@ -840,7 +840,7 @@ class DocumentProcessor:
                                     'height': word.get('height', 0)
                                 })
 
-                except Exception as e:
+        except Exception as e:
                     logger.error(f"Ошибка при обработке слова '{word.get('text', '')}': {str(e)}")
                     continue
 
@@ -849,9 +849,9 @@ class DocumentProcessor:
 
             # Проверяем согласованность диагнозов
             self._verify_diagnoses({'medical_data': medical_data})
-            
-            return {
-                'sensitive_regions': sensitive_regions,
+        
+        return {
+            'sensitive_regions': sensitive_regions,
                 'medical_data': medical_data,
                 'found_surnames': found_surnames
             }
@@ -862,7 +862,7 @@ class DocumentProcessor:
                 'sensitive_regions': [],
                 'medical_data': [],
                 'found_surnames': []
-            }
+        }
 
     def _mask_sensitive_data(self, image: np.ndarray, sensitive_regions: List[Dict]) -> np.ndarray:
         """
@@ -881,7 +881,7 @@ class DocumentProcessor:
             logger.info(f"Количество регионов для маскирования: {len(sensitive_regions)}")
 
             # Создаем копию изображения для маскирования
-            masked_image = image.copy()
+        masked_image = image.copy()
 
             if not sensitive_regions:
                 logger.warning("Нет регионов для маскирования")
@@ -955,19 +955,19 @@ class DocumentProcessor:
 
             # Затем маскируем остальные регионы
             for region in other_regions:
-                try:
-                    left = int(region.get('left', 0))
-                    top = int(region.get('top', 0))
-                    width = int(region.get('width', 0))
-                    height = int(region.get('height', 0))
-                    
+            try:
+                left = int(region.get('left', 0))
+                top = int(region.get('top', 0))
+                width = int(region.get('width', 0))
+                height = int(region.get('height', 0))
+                
                     # Проверяем корректность координат
-                    if (left < 0 or top < 0 or width <= 0 or height <= 0 or
-                        left + width > masked_image.shape[1] or
-                        top + height > masked_image.shape[0]):
+                if (left < 0 or top < 0 or width <= 0 or height <= 0 or
+                    left + width > masked_image.shape[1] or
+                    top + height > masked_image.shape[0]):
                         logger.warning(f"Некорректные координаты для региона: "
                                      f"left={left}, top={top}, width={width}, height={height}")
-                        continue
+                    continue
 
                     # Добавляем небольшой отступ
                     padding = 2
@@ -987,11 +987,11 @@ class DocumentProcessor:
                     else:
                         logger.warning(f"Неполное маскирование региона: '{region.get('text', '')}'")
 
-                except Exception as e:
+            except Exception as e:
                     logger.error(f"Ошибка при маскировании региона: {str(e)}")
-                    continue
+                continue
 
-            return masked_image
+        return masked_image
 
         except Exception as e:
             logger.error(f"Критическая ошибка при маскировании: {str(e)}")
@@ -1031,11 +1031,11 @@ class DocumentProcessor:
         # Проверяем на медицинские термины
         if word_lower in self.medical_terms:
             return True
-            
+
         # Проверяем на разрешенные слова
         if word_lower in self.allowed_words:
             return True
-
+        
         # Проверяем на фамилии
         is_surname = (word_lower in self.surnames or 
                      transliterate(word_lower) in self.surnames or
@@ -1054,8 +1054,8 @@ class DocumentProcessor:
             start_idx = max(0, current_index - 2)
             end_idx = min(len(text_data), current_index + 3)
             context_words = [w['text'].lower() for w in text_data[start_idx:end_idx]]
-            context_text = ' '.join(context_words)
-            
+        context_text = ' '.join(context_words)
+        
             # Если слово в медицинском контексте - пропускаем
             if any(ctx in context_text for ctx in medical_contexts):
                 return True
@@ -1071,11 +1071,11 @@ class DocumentProcessor:
             ]
 
             if any(re.search(pattern, context_text, re.IGNORECASE) for pattern in template_patterns):
-                return False
-
+            return False
+        
             # Если слово похоже на фамилию и не в медицинском контексте - маскируем
             return False
-
+        
         # Проверяем на инициалы
         if len(word) <= 2 and word[0].isupper():
             # Если это последнее слово или следующее слово тоже инициал - пропускаем
@@ -1084,12 +1084,12 @@ class DocumentProcessor:
                  (text_data[current_index + 1]['text'].endswith('.') or
                   (len(text_data[current_index + 1]['text']) <= 2 and
                    text_data[current_index + 1]['text'][0].isupper())))):
-                return True
+                    return True
 
         # Проверяем на числовые персональные данные
         is_personal, _ = self._is_numeric_personal_data(word)
         if is_personal:
-            return False
+        return False
 
         # По умолчанию разрешаем слово
         return True
