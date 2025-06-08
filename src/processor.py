@@ -1203,6 +1203,34 @@ class DocumentProcessor:
                     if not word_text:
                         continue
 
+                    # Улучшенная проверка на валидность слова для отсеивания шума OCR
+                    alpha_chars = sum(1 for c in word_text if c.isalpha())
+                    total_chars = len(word_text)
+
+                    if total_chars == 0: 
+                        continue
+
+                    # Если слово имеет менее 2 буквенных символов и очень короткое (менее 4 символов всего),
+                    # или если доля буквенных символов меньше 30% для более длинных слов - считаем шумом.
+                    if (alpha_chars < 2 and total_chars < 4) or (alpha_chars / total_chars < 0.3):
+                        logger.debug(f"Пропуск слова '{word_text}' из-за низкой доли буквенных символов: {alpha_chars}/{total_chars}")
+                        continue
+                    
+                    # Identify name/surname/patronymic candidates for the 'unreadable' check
+                    word_lower = word_text.lower()
+                    translit_word_lower = transliterate(word_lower)
+
+                    is_surname_candidate = (word_lower in self.surnames or translit_word_lower in self.translit_surnames)
+                    is_name_candidate = (word_lower in self.names or translit_word_lower in self.translit_names or \
+                                         word_lower in self.patronymics or translit_word_lower in self.translit_patronymics)
+
+                    if is_surname_candidate:
+                        found_surnames.append(word_text)
+                        logger.debug(f"Обнаружена фамилия-кандидат для проверки 'нечитаемости': {word_text}")
+                    if is_name_candidate:
+                        found_names.append(word_text)
+                        logger.debug(f"Обнаружено имя-кандидат для проверки 'нечитаемости': {word_text}")
+
                     # Проверяем на почтовый индекс
                     is_personal_data, data_type = self._is_numeric_personal_data(word_text)
                     if data_type == 'Почтовый индекс':
@@ -1220,8 +1248,6 @@ class DocumentProcessor:
                         continue # Продолжаем, чтобы остальные части адреса тоже были проверены
                     
                     # Проверяем на город (в любом регистре)
-                    # Мы больше не используем mask_context как флаг для всей строки после города
-                    # Вместо этого, мы будем собирать все части адреса и маскировать их вместе
                     if word_text in self.cities_to_mask:
                         sensitive_context.append({
                             'text': word_text,
@@ -1237,7 +1263,6 @@ class DocumentProcessor:
                         # Продолжаем, чтобы другие части адреса могли быть добавлены
                         
                     # Проверяем на компоненты адреса (улица, дом, корпус, квартира)
-                    # Используем более общие паттерны для обнаружения частей адреса
                     address_component_patterns = {
                         'street': r'(?:ул\.?|улица|пер\.?|переулок|пр\.?|проспект|ш\.?|шоссе|наб\.?|набережная|пл\.?|площадь)\s+[А-Яа-яЁё\d\s\.\-]+',
                         'house_number': r'(?:д\.?|дом)\s*\d+(?:[а-яА-ЯёЁ])?(?:\s*к\.?\s*\d+)?(?::\s*\d+)?',
@@ -1247,8 +1272,6 @@ class DocumentProcessor:
                     
                     found_address_component = False
                     for addr_type, pattern in address_component_patterns.items():
-                        # Проверяем, является ли текущее слово частью такого паттерна
-                        # Для этого собираем небольшой контекст вокруг слова
                         context_start = max(0, i - 5) # 5 слов назад
                         context_end = min(len(text_data), i + 5) # 5 слов вперед
                         context_text = " ".join([w['text'] for w in text_data[context_start:context_end]])
@@ -1286,9 +1309,8 @@ class DocumentProcessor:
                         logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
                         continue
 
-                    # Проверяем на фамилии и персональные данные
-                    if not self._is_allowed_word(word_text, text_data, i):
-                        found_surnames.append(word_text)
+                    # Теперь определяем, нужно ли слово маскировать (используя логику _is_allowed_word)
+                    if not self._is_allowed_word(word_text, text_data, i): # _is_allowed_word возвращает False, если слово должно быть замаскировано
                         sensitive_regions.append({
                             'text': word_text,
                             'confidence': word.get('conf', 0),
@@ -1296,13 +1318,10 @@ class DocumentProcessor:
                             'top': word.get('top', 0),
                             'width': word.get('width', 0),
                             'height': word.get('height', 0),
-                            'type': 'surname',
-                            'position': i # Добавляем позицию
+                            'type': 'personal_name_or_surname', # Общий тип для маскирования имен/фамилий
+                            'position': i
                         })
-                        logger.info(f"Найдена фамилия для маскирования: {word_text}")
-                    # Явное определение имени (по базе имён)
-                    if word_text.lower() in self.names:
-                        found_names.append(word_text)
+                        logger.info(f"Слово '{word_text}' помечено для маскирования.")
 
                     # Проверяем на медицинские термины
                     for pattern_name, pattern in self.medical_patterns.items():
@@ -1325,8 +1344,6 @@ class DocumentProcessor:
                     continue
             
             # После обработки всех слов, группируем компоненты адресов
-            # Здесь будет логика группировки sensitive_context в полные адреса
-            # Например, по близости слов и последовательности типов
             grouped_addresses = self._group_address_components(sensitive_context)
             sensitive_regions.extend(grouped_addresses)
             
@@ -1668,15 +1685,13 @@ class DocumentProcessor:
             if surname and name:
                 break
         
-        # Проверяем, что фамилия есть в базе данных
-        if surname and surname.lower() in self.surnames:
-            logger.info(f"Найдена фамилия в базе данных: {surname}")
-            if name:
-                logger.info(f"Найдено имя: {name}")
-                return {
-                    'surname': surname,
-                    'name': name
-                }
+        # Возвращаем найденную информацию без проверки по self.surnames
+        if surname or name:
+            logger.info(f"Найдена информация о пациенте: Фамилия: {surname}, Имя: {name}")
+            return {
+                'surname': surname,
+                'name': name
+            }
         
         logger.warning("Не удалось найти достоверную информацию о пациенте")
         return None
