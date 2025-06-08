@@ -133,8 +133,42 @@ class DocumentProcessor:
         ])
         
         # Инициализация паттернов для числовых данных
-        self.numeric_lengths = {10, 11, 12, 13, 14, 15, 16}
         self.numeric_patterns = {
+            'inn': {
+                'pattern': r'^(?:\d{10}|\d{12}|(?:\d{2}[-\s]?){5}\d{2}|(?:\d{3}[-\s]?){3}\d{3}|(?:\d{4}[-\s]?){2}\d{4}|(?:\d{6}[-\s]?)\d{4}|(?:\d{5}[-\s]?)\d{5}|(?:\d{4}[-\s]?)\d{6}|(?:\d{3}[-\s]?)\d{7}|(?:\d{2}[-\s]?)\d{8}|\d{1}[-\s]?\d{9})$',
+                'description': 'ИНН',
+                'ocr_errors': {
+                    '0': ['O', 'o', 'О', 'о'],
+                    '1': ['I', 'i', 'l', 'L', '|'],
+                    '2': ['Z', 'z', 'З', 'з'],
+                    '3': ['З', 'з', 'Э', 'э'],
+                    '4': ['Ч', 'ч'],
+                    '5': ['S', 's', 'Б', 'б'],
+                    '6': ['G', 'g', 'б', 'Б'],
+                    '7': ['Т', 'т'],
+                    '8': ['В', 'в'],
+                    '9': ['g', 'G', 'д', 'Д']
+                }
+            },
+            'phone': {
+                'pattern': r'^(?:\+?[78][-\s]?)?(?:\(?\d{3}\)?[-\s]?)(?:\d{3}[-\s]?){2}\d{2}(?:\d{2})?$',
+                'description': 'Телефон',
+                'ocr_errors': {
+                    '0': ['O', 'o', 'О', 'о'],
+                    '1': ['I', 'i', 'l', 'L', '|'],
+                    '2': ['Z', 'z', 'З', 'з'],
+                    '3': ['З', 'з', 'Э', 'э'],
+                    '4': ['Ч', 'ч'],
+                    '5': ['S', 's', 'Б', 'б'],
+                    '6': ['G', 'g', 'б', 'Б'],
+                    '7': ['Т', 'т'],
+                    '8': ['В', 'в'],
+                    '9': ['g', 'G', 'д', 'Д'],
+                    '+': ['t', 'Т', 'т'],
+                    '(': ['С', 'с', 'C', 'c'],
+                    ')': ['С', 'с', 'C', 'c']
+                }
+            },
             'passport': {
                 'pattern': r'^\d{4}\s?\d{6}$',
                 'description': 'Паспорт'
@@ -147,14 +181,10 @@ class DocumentProcessor:
                 'pattern': r'^\d{16}$',
                 'description': 'Полис ОМС'
             },
-            'phone': {
-                'pattern': r'^\+?[78][\s\-\(]?\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}$',
-                'description': 'Телефон'
-            },
             'med_card': {
                 'pattern': r'^[А-Я]\d{6}|\d{6}[А-Я]$',
                 'description': 'Номер медкарты'
-            }
+            },
         }
         
         # Медицинские паттерны
@@ -314,6 +344,53 @@ class DocumentProcessor:
                 logger.info(f"Загружено терминов из {terms_file}")
             except Exception as e:
                 logger.error(f"Ошибка при загрузке терминов из {terms_file}: {e}")
+
+        # Расширяем список медицинских терминов
+        self.medical_terms.update({
+            'анамнез', 'диагноз', 'жалобы', 'обследование', 'терапия',
+            'лечение', 'процедура', 'манипуляция', 'операция', 'реабилитация',
+            'консультация', 'наблюдение', 'диспансеризация', 'скрининг',
+            'профилактика', 'вакцинация', 'иммунизация', 'диета', 'режим',
+            'рекомендации', 'назначения', 'показания', 'противопоказания',
+            'осложнения', 'побочные', 'эффекты', 'аллергия', 'непереносимость',
+            'хронический', 'острый', 'подострый', 'ремиссия', 'обострение',
+            'прогрессирование', 'стабилизация', 'улучшение', 'ухудшение',
+            'выздоровление', 'рецидив', 'метастаз', 'метастазирование'
+        })
+
+        # Добавляем контекстные маркеры для разных типов документов
+        self.document_contexts = {
+            'medical_card': {
+                'markers': [
+                    r'МЕДИЦИНСКАЯ КАРТА',
+                    r'ИСТОРИЯ БОЛЕЗНИ',
+                    r'ДАННЫЕ ПАЦИЕНТА',
+                    r'ЖАЛОБЫ',
+                    r'АНАМНЕЗ'
+                ],
+                'sensitive_sections': ['ДАННЫЕ ПАЦИЕНТА'],
+                'medical_sections': ['ЖАЛОБЫ', 'АНАМНЕЗ', 'ДИАГНОЗ', 'ЛЕЧЕНИЕ']
+            },
+            'discharge_summary': {
+                'markers': [
+                    r'ВЫПИСКА',
+                    r'ЭПИКРИЗ',
+                    r'ЗАКЛЮЧЕНИЕ',
+                    r'РЕЗУЛЬТАТЫ ОБСЛЕДОВАНИЯ'
+                ],
+                'sensitive_sections': ['ПАЦИЕНТ'],
+                'medical_sections': ['ДИАГНОЗ', 'ЛЕЧЕНИЕ', 'РЕЗУЛЬТАТЫ']
+            },
+            'operation_report': {
+                'markers': [
+                    r'ПРОТОКОЛ ОПЕРАЦИИ',
+                    r'ОПЕРАЦИЯ',
+                    r'ХИРУРГИЧЕСКОЕ ВМЕШАТЕЛЬСТВО'
+                ],
+                'sensitive_sections': ['ПАЦИЕНТ'],
+                'medical_sections': ['ДИАГНОЗ', 'ОПЕРАЦИЯ', 'ОСЛОЖНЕНИЯ']
+            }
+        }
 
     @classmethod
     async def create(cls, data_manager: DataManager) -> 'DocumentProcessor':
@@ -497,11 +574,11 @@ class DocumentProcessor:
             if file_path.suffix.lower() == '.pdf':
                 from pdf2image import convert_from_path
                 images = convert_from_path(file_path)
-                for i, image in enumerate(images):
+                for i, image_pil in enumerate(images):
                     temp_file = temp_dir / f"temp_{uuid.uuid4().hex[:8]}-{i+1}.jpg"
                     temp_files.append(temp_file)
-                    image.save(str(temp_file), 'JPEG', quality=95)
-                    image.close()
+                    image_pil.save(str(temp_file), 'JPEG', quality=95)
+                    image_pil.close()
             else:
                 temp_file = temp_dir / f"temp_{uuid.uuid4().hex[:8]}.jpg"
                 temp_files.append(temp_file)
@@ -527,14 +604,19 @@ class DocumentProcessor:
             # Исправляем ориентацию изображения
             image = self._fix_image_orientation(image)
 
-            # Распознавание текста
-            text_data = self._recognize_text(image)
+            # Распознавание текста и получение уверенности
+            text_data, average_confidence = self._recognize_text(image)
 
             # Анализ текста и определение регионов для маскирования
             for i, word_data in enumerate(text_data):
                 word_text = word_data['text'].strip()
                 if not word_text:
                     continue
+
+                # Логируем слова с низкой уверенностью для отладки проблем с OCR
+                confidence = word_data.get('conf', 0)
+                if confidence < 60:  # Порог уверенности (например, 60%)
+                    logger.warning(f"Низкая уверенность распознавания для слова '{word_text}' (уверенность: {confidence}, координаты: {word_data['left']},{word_data['top']},{word_data['width']},{word_data['height']})")
 
                 # Определение новой строки
                 is_new_line = False
@@ -836,6 +918,11 @@ class DocumentProcessor:
                 output_type=pytesseract.Output.DICT
             )
 
+            # Вычисляем среднюю уверенность
+            confidences = [float(c) for c in data['conf'] if float(c) != -1]
+            average_confidence = sum(confidences) / len(confidences) if confidences else 0
+            logger.info(f"Средняя уверенность распознавания: {average_confidence:.2f}")
+
             # Выводим статистику распознавания
             total_words = len([t for t in data['text'] if t.strip()])
             logger.info(f"Всего распознано слов: {total_words}")
@@ -857,16 +944,23 @@ class DocumentProcessor:
                     logger.info(
                         "Используем результаты английского распознавания")
                     data = eng_data
+                    # Пересчитываем уверенность для английского языка
+                    confidences = [float(c) for c in data['conf'] if float(c) != -1]
+                    average_confidence = sum(confidences) / len(confidences) if confidences else 0
+                    logger.info(f"Средняя уверенность после переключения на английский: {average_confidence:.2f}")
 
             words = []
+
             for i in range(len(data['text'])):
                 text = data['text'][i].strip()
                 if text:
                     confidence = float(data['conf'][i])
-                    if confidence < 30:
-                        logger.debug(
-                            f"Пропуск слова '{text}' из-за низкой уверенности: {confidence}")
-                        continue
+                    # Порог уверенности для отдельных слов может быть ниже, чем для всего документа
+                    # Удаляем фильтрацию по уверенности, чтобы получить все слова для анализа
+                    # if confidence < 10: 
+                    #     logger.debug(
+                    #         f"Пропуск слова '{text}' из-за низкой уверенности: {confidence}")
+                    #     continue
 
                     word = {
                         'text': text,
@@ -882,7 +976,8 @@ class DocumentProcessor:
                         f"Распознано слово: '{text}' (уверенность: {confidence}, язык: {word['lang']})")
 
             logger.info(f"Итоговое количество распознанных слов: {len(words)}")
-            return words
+
+            return words, average_confidence # Возвращаем только слова и среднюю уверенность
         except Exception as e:
             logger.error(f"Ошибка при распознавании текста: {str(e)}")
             raise
@@ -1309,79 +1404,64 @@ class DocumentProcessor:
 
     def _is_numeric_personal_data(self, text: str) -> Tuple[bool, str]:
         """
-        Проверяет, является ли числовая строка персональными данными
+        Проверяет, является ли текст числовыми персональными данными
         
         Args:
-            text: строка для проверки
+            text: текст для проверки
             
         Returns:
-            Tuple[bool, str]: (является ли персональными данными, описание типа данных)
+            Tuple[bool, str]: (является ли персональными данными, тип данных)
         """
-        # Проверяем на последовательность из 6 цифр без разделителей
-        if re.match(r'^\d{6}$', text):
-            return True, "6-значный номер"
-            
-        # Удаляем все нецифровые символы для проверки длины
-        digits_only = ''.join(c for c in text if c.isdigit())
+        # Очищаем текст от пробелов и дефисов для проверки
+        clean_text = re.sub(r'[\s\-]', '', text)
         
-        # Проверяем на последовательность из 16 цифр
-        if len(digits_only) == 16:
-            return True, "16-значный номер"
-            
-        # Проверяем длину
-        if len(digits_only) not in self.numeric_lengths:
-            # Дополнительные проверки из project2
-            # Проверка на числа в формате даты (например, 01021990)
-            if len(text) == 8 and text.isdigit():
-                try:
-                    day = int(text[:2])
-                    month = int(text[2:4])
-                    year = int(text[4:])
-                    if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
-                        return True, "Дата рождения"
-                except BaseException:
-                    pass
-
-            # Проверка на номера телефонов в разных форматах
-            phone_patterns = [
-                # +7(999)123-45-67
-                r'\+?[78][\s\-\(]?\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}',
-                # 999-123-45-67
-                r'\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}',
-                # 6-значные номера с дефисами (например, 73-40-06)
-                r'^\d{2}-\d{2}-\d{2}$',
-            ]
-
-            for pattern in phone_patterns:
-                if re.match(pattern, text):
-                    return True, "Номер телефона"
-
-            # Проверка на номера медицинских карт
-            med_card_patterns = [
-                r'[А-Я]\d{6}',  # А123456
-                r'\d{6}[А-Я]',  # 123456А
-            ]
-
-            for pattern in med_card_patterns:
-                if re.match(pattern, text):
-                    return True, "Номер медицинской карты"
-
-            # Проверка на даты в формате DD.MM.YYYY
-            if re.match(r'^\d{2}\.\d{2}\.\d{4}$', text):
-                return True, "Дата"
-
-            return False, ""
-            
-        # Проверяем каждый паттерн (существующая логика)
+        # Проверяем каждый тип данных
         for data_type, pattern_info in self.numeric_patterns.items():
-            if re.match(pattern_info['pattern'], text):
+            # Проверяем основной паттерн
+            if re.match(pattern_info['pattern'], text) or re.match(pattern_info['pattern'], clean_text):
+                # Если есть информация об ошибках OCR, проверяем возможные варианты
+                if 'ocr_errors' in pattern_info:
+                    # Проверяем все возможные варианты с ошибками OCR
+                    for digit, possible_errors in pattern_info['ocr_errors'].items():
+                        for error in possible_errors:
+                            # Заменяем цифру на возможную ошибку OCR
+                            variant = clean_text.replace(digit, error)
+                            if re.match(pattern_info['pattern'], variant):
+                                return True, pattern_info['description']
                 return True, pattern_info['description']
-                
-        # Если длина совпадает с длиной паспорта (10 цифр), считаем это
-        # паспортными данными
-        if len(digits_only) == 10:
-            return True, "Паспорт"
-            
+        
+        # Проверяем телефонные номера с учетом международного формата
+        phone_patterns = [
+            r'^\+?[78][-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Российский формат
+            r'^\+?\d{1,3}[-\s]?\(?\d{2,3}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Международный формат
+            r'^\+?\d{1,3}[-\s]?\d{2,3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Упрощенный международный
+            r'^\d{3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Локальный формат
+            r'^8[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$'  # Альтернативный российский
+        ]
+        
+        for pattern in phone_patterns:
+            if re.match(pattern, text) or re.match(pattern, clean_text):
+                return True, "Телефон"
+        
+        # Проверяем ИНН с учетом возможных ошибок OCR
+        inn_patterns = [
+            r'^\d{10}$',  # ИНН юр. лица
+            r'^\d{12}$',  # ИНН физ. лица
+            r'^(?:\d{2}[-\s]?){5}\d{2}$',  # С разделителями
+            r'^(?:\d{3}[-\s]?){3}\d{3}$',
+            r'^(?:\d{4}[-\s]?){2}\d{4}$',
+            r'^(?:\d{6}[-\s]?)\d{4}$',
+            r'^(?:\d{5}[-\s]?)\d{5}$',
+            r'^(?:\d{4}[-\s]?)\d{6}$',
+            r'^(?:\d{3}[-\s]?)\d{7}$',
+            r'^(?:\d{2}[-\s]?)\d{8}$',
+            r'^\d{1}[-\s]?\d{9}$'
+        ]
+        
+        for pattern in inn_patterns:
+            if re.match(pattern, text) or re.match(pattern, clean_text):
+                return True, "ИНН"
+        
         return False, ""
 
     def _verify_medical_context(
