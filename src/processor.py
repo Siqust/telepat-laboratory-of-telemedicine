@@ -151,7 +151,7 @@ class DocumentProcessor:
                 }
             },
             'phone': {
-                'pattern': r'^(?:\+?[78][-\s]?)?(?:\(?\d{3}\)?[-\s]?)(?:\d{3}[-\s]?){2}\d{2}(?:\d{2})?$',
+                'pattern': r'^(?:\+?7|8)?[-\s\(]*\d{2,4}[-\s\)]*\d{2,4}[-\s]*\d{2,4}[-\s]*\d{2,4}$|^fax[:\s]*\d{2,4}[-\s\(]*\d{2,4}[-\s\)]*\d{2,4}[-\s]*\d{2,4}[-\s]*\d{2,4}$|тел\.[\s\/]*факс[:\s]*\d{2,4}[-\s\(]*\d{2,4}[-\s\)]*\d{2,4}[-\s]*\d{2,4}[-\s]*\d{2,4}$|телефон[:\s]*\d{2,4}[-\s\(]*\d{2,4}[-\s\)]*\d{2,4}[-\s]*\d{2,4}[-\s]*\d{2,4}$',
                 'description': 'Телефон',
                 'ocr_errors': {
                     '0': ['O', 'o', 'О', 'о'],
@@ -185,8 +185,51 @@ class DocumentProcessor:
                 'pattern': r'^[А-Я]\d{6}|\d{6}[А-Я]$',
                 'description': 'Номер медкарты'
             },
+            'birth_date': {
+                'pattern': r'^\d{2}\.\d{2}\.\d{4}$|^\d{8}$|^\d{1,2}\s(янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\s\d{4}$',
+                'description': 'Дата рождения',
+                'ocr_errors': {
+                    '0': ['O', 'o', 'О', 'о'],
+                    '1': ['I', 'i', 'l', 'L', '|'],
+                    '2': ['Z', 'z', 'З', 'з'],
+                    '3': ['З', 'з', 'Э', 'э'],
+                    '4': ['Ч', 'ч'],
+                    '5': ['S', 's', 'Б', 'б'],
+                    '6': ['G', 'g', 'б', 'Б'],
+                    '7': ['Т', 'т'],
+                    '8': ['В', 'в'],
+                    '9': ['g', 'G', 'д', 'Д']
+                }
+            },
+            'email': {
+                'pattern': r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+                'description': 'Email'
+            },
+            'postal_code': {
+                'pattern': r'^\d{6}$|^\d{3}\s\d{3}$',
+                'description': 'Почтовый индекс',
+                'ocr_errors': {
+                    '0': ['O', 'o', 'О', 'о'],
+                    '1': ['I', 'i', 'l', 'L', '|'],
+                    '2': ['Z', 'z', 'З', 'з'],
+                    '3': ['З', 'з', 'Э', 'э'],
+                    '4': ['Ч', 'ч'],
+                    '5': ['S', 's', 'Б', 'б'],
+                    '6': ['G', 'g', 'б', 'Б'],
+                    '7': ['Т', 'т'],
+                    '8': ['В', 'в'],
+                    '9': ['g', 'G', 'д', 'Д']
+                }
+            }
         }
         
+        # Ключевые слова адресов, которые могут быть короткими или иметь нетипичный регистр, но важны для маскирования
+        self.address_keywords = {
+            'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе', 
+            'наб.', 'набережная', 'пл.', 'площадь', 'д.', 'дом', 'к.', 'корп.', 
+            'корпус', 'кв.', 'квартира', 'стр.', 'строение', 'литера', 'лит.'
+        }
+
         # Медицинские паттерны
         self.medical_patterns = {
             'date': r'(\d{2}\.\d{2}\.\d{4})',
@@ -548,6 +591,91 @@ class DocumentProcessor:
             logger.warning(f"Ошибка при определении ориентации изображения: {str(e)}")
             return image
 
+    def _detect_pen(self, image: np.ndarray) -> bool:
+        """
+        Определяет наличие ручки на изображении
+        
+        Args:
+            image: изображение для анализа
+            
+        Returns:
+            bool: True если ручка обнаружена, False если нет
+        """
+        try:
+            # Конвертируем в оттенки серого
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Применяем размытие для уменьшения шума
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            
+            # Находим края с помощью детектора Канни
+            edges = cv2.Canny(blurred, 50, 150)
+            
+            # Находим линии с помощью преобразования Хафа
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
+            
+            if lines is None:
+                return False
+                
+            # Конвертируем в HSV для поиска характерных цветов ручки
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            
+            # Определяем диапазоны цветов, характерных для ручек
+            # Синий
+            blue_lower = np.array([100, 50, 50])
+            blue_upper = np.array([130, 255, 255])
+            # Красный (два диапазона из-за особенностей HSV)
+            red_lower1 = np.array([0, 50, 50])
+            red_upper1 = np.array([10, 255, 255])
+            red_lower2 = np.array([170, 50, 50])
+            red_upper2 = np.array([180, 255, 255])
+            
+            # Создаем маски для каждого цвета
+            blue_mask = cv2.inRange(hsv, blue_lower, blue_upper)
+            red_mask1 = cv2.inRange(hsv, red_lower1, red_upper1)
+            red_mask2 = cv2.inRange(hsv, red_lower2, red_upper2)
+            red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+            
+            # Объединяем маски (только синий и красный)
+            pen_colors_mask = cv2.bitwise_or(blue_mask, red_mask)
+            
+            # Находим контуры на маске цветов
+            contours, _ = cv2.findContours(pen_colors_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            # Анализируем найденные линии и контуры
+            pen_detected = False
+            
+            # Проверяем линии на характерные признаки ручки
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                angle = np.abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
+                
+                # Ручка обычно длинная и прямая
+                if length > 100 and (angle < 20 or angle > 160):
+                    # Проверяем, есть ли рядом контуры характерных цветов
+                    for contour in contours:
+                        if cv2.contourArea(contour) > 100:  # Игнорируем слишком маленькие области
+                            M = cv2.moments(contour)
+                            if M["m00"] != 0:
+                                cx = int(M["m10"] / M["m00"])
+                                cy = int(M["m01"] / M["m00"])
+                                
+                                # Проверяем, находится ли контур рядом с линией
+                                if (min(x1, x2) - 20 <= cx <= max(x1, x2) + 20 and
+                                    min(y1, y2) - 20 <= cy <= max(y1, y2) + 20):
+                                    pen_detected = True
+                                    break
+                
+                    if pen_detected:
+                        break
+            
+            return pen_detected
+            
+        except Exception as e:
+            logger.error(f"Ошибка при определении ручки: {str(e)}")
+            return False
+
     async def process_document(self, file_path: str, clinic_name: str, output_dir: str) -> Tuple[str, Dict]:
         """Обработка документа: конвертация, распознавание текста, маскирование и сохранение"""
         # Инициализация переменных
@@ -706,7 +834,46 @@ class DocumentProcessor:
                         'text': word_text
                     })
 
-            # Маскирование найденных регионов
+            # Группируем компоненты адресов, если они есть
+            sensitive_context = [] # Необходимо собрать контекст для группировки
+            for region in sensitive_regions:
+                if region['type'] in ['city', 'street', 'house_number', 'building_number', 'flat_number', 'postal_code']:
+                    sensitive_context.append(region)
+            grouped_addresses = self._group_address_components(sensitive_context)
+            sensitive_regions.extend(grouped_addresses)
+
+            # Проверка наличия требуемых персональных данных (Фамилия, Имя, Полис ОМС, СНИЛС)
+            required_data_types = ['personal_name', 'policy', 'snils'] # Исключил 'passport'
+            found_required_data = any(region['type'] in required_data_types for region in sensitive_regions)
+
+            if not found_required_data:
+                logger.warning("Не найдено ни Фамилии, ни Имени, ни Полиса ОМС, ни СНИЛС. Отправляем в папку unreadable")
+                output_file = Path(output_dir) / "unreadable" / f"{uuid.uuid4().hex}_unreadable.jpg"
+                output_file.parent.mkdir(exist_ok=True)
+                
+                pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                pil_image.save(str(output_file), 'JPEG', quality=100)
+                if not output_file.exists():
+                    raise RuntimeError("Файл не был создан после сохранения")
+                pil_image.close()
+                
+                # Создаем файлы с текстом "Не распознано" для всех нейросетей (исключая GPT)
+                ai_dirs = {
+                    'deepseek': 'ai-result/deepseek',
+                    'gigachat': 'ai-result/gigachat'
+                }
+                
+                for ai_name, ai_dir in ai_dirs.items():
+                    analysis_file = Path(ai_dir) / f"{output_file.stem}.json"
+                    analysis_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(analysis_file, 'w', encoding='utf-8') as f:
+                        json.dump({"status": "Не распознано", "reason": "Отсутствуют требуемые персональные данные"}, f, ensure_ascii=False, indent=2)
+                    logger.info(f"Создан файл анализа для {ai_name}: {analysis_file}")
+                
+                return str(output_file), {"status": "Не распознано", "reason": "Отсутствуют требуемые персональные данные"}
+
+            # Маскирование найденных регионов (выполняется только если found_required_data == True)
+            masked_regions_count = 0
             for region in sensitive_regions:
                 try:
                     left = int(region['left'])
@@ -726,48 +893,84 @@ class DocumentProcessor:
                         
                         # Маскируем регион
                         image[top:top + height, left:left + width] = 0
+                        masked_regions_count += 1
                 except Exception as e:
                     logger.warning(f"Ошибка при маскировании региона {region}: {str(e)}")
                     continue
-
-            # Сохранение результата
-            output_file = output_dir / f"{uuid.uuid4().hex}_depersonalized.jpg"
             
-            # Конвертируем numpy array в PIL Image
-            pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            output_file = Path(output_dir) / f"{uuid.uuid4().hex}_depersonalized.jpg"
+            
             # Сохраняем через PIL
+            pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             pil_image.save(str(output_file), 'JPEG', quality=100)
-            # Проверяем, что файл создался
             if not output_file.exists():
                 raise RuntimeError("Файл не был создан после сохранения")
-            # Проверяем размер файла
-            if output_file.stat().st_size == 0:
-                raise RuntimeError("Файл создан, но пустой")
-            
-            # Закрываем изображение
             pil_image.close()
             
-            # Конвертируем в байт-код для отправки в DeepSeek
-            with open(output_file, 'rb') as f:
-                image_bytes = f.read()
-            
-            # Отправляем на анализ в DeepSeek и ждем результат
+            # Отправляем на анализ в DeepSeek
             logger.info(f"Отправка файла {output_file.name} на анализ в DeepSeek...")
-            analysis_result = await self.deepseek_client.analyze_medical_report(str(output_file))
+            deepseek_analysis_result = await self.deepseek_client.analyze_medical_report(str(output_file))
             
-            if not analysis_result:
-                logger.error(f"Не удалось получить анализ от DeepSeek для файла {output_file.name}")
-                return str(output_file), {}
+            # Отправляем на анализ в GigaChat
+            logger.info(f"Отправка файла {output_file.name} на анализ в GigaChat...")
+            gigachat_analysis_result = await self.gigachat_client.analyze_medical_report(str(output_file))
 
-            # Сохраняем результат анализа
-            analysis_file = ai_results_dir / f"{output_file.stem}_analysis.json"
-            with open(analysis_file, 'w', encoding='utf-8') as f:
-                json.dump(analysis_result, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"Анализ DeepSeek сохранен в {analysis_file}")
-            
-            return str(output_file), analysis_result
-                
+            # Сохраняем результаты анализа (исключая GPT)
+            final_analysis_result = {}
+
+            if deepseek_analysis_result:
+                deepseek_analysis_file = Path('ai-result/deepseek').absolute() / f"{output_file.stem}.json"
+                deepseek_analysis_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(deepseek_analysis_file, 'w', encoding='utf-8') as f:
+                    json.dump(deepseek_analysis_result, f, ensure_ascii=False, indent=2)
+                logger.info(f"Анализ DeepSeek сохранен в {deepseek_analysis_file}")
+                final_analysis_result['deepseek'] = deepseek_analysis_result
+            else:
+                logger.error(f"Не удалось получить анализ от DeepSeek для файла {output_file.name}")
+
+            if gigachat_analysis_result:
+                gigachat_analysis_file = Path('ai-result/gigachat').absolute() / f"{output_file.stem}.json"
+                gigachat_analysis_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(gigachat_analysis_file, 'w', encoding='utf-8') as f:
+                    json.dump(gigachat_analysis_result, f, ensure_ascii=False, indent=2)
+                logger.info(f"Анализ GigaChat сохранен в {gigachat_analysis_file}")
+                final_analysis_result['gigachat'] = gigachat_analysis_result
+            else:
+                logger.error(f"Не удалось получить анализ от GigaChat для файла {output_file.name}")
+
+            extracted_data = self._extract_data(text_data)
+            found_name = extracted_data.get('found_names', [])
+            found_surname = extracted_data.get('found_surnames', [])
+            found_policy = any(r['type'] == 'Полис ОМС' for r in extracted_data['sensitive_regions'])
+            found_snils = any(r['type'] == 'СНИЛС' for r in extracted_data['sensitive_regions'])
+            if not (found_name or found_surname or found_policy or found_snils):
+                # В unreadable и return
+                unreadable_dir = Path(output_dir) / "unreadable"
+                unreadable_dir.mkdir(exist_ok=True, parents=True)
+                output_file = unreadable_dir / f"{uuid.uuid4().hex}_unreadable.jpg"
+                pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                pil_image.save(str(output_file), 'JPEG', quality=100)
+                pil_image.close()
+                ai_dirs = {
+                    'deepseek': 'ai-result/deepseek',
+                    'gigachat': 'ai-result/gigachat'
+                }
+                for ai_name, ai_dir in ai_dirs.items():
+                    analysis_file = Path(ai_dir) / f"{output_file.stem}.json"
+                    analysis_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(analysis_file, 'w', encoding='utf-8') as f:
+                        json.dump({
+                            "status": "Не распознано",
+                            "reason": "Не найдено ни одного из требуемых персональных данных (Имя, Фамилия, ОМС, СНИЛС)"
+                        }, f, ensure_ascii=False, indent=2)
+                    logger.info(f"Создан файл анализа для {ai_name}: {analysis_file}")
+                return str(output_file), {
+                    "status": "Не распознано",
+                    "reason": "Не найдено ни одного из требуемых персональных данных (Имя, Фамилия, ОМС, СНИЛС)"
+                }
+
+            return str(output_file), final_analysis_result
+
         except Exception as e:
             logger.error(f"Ошибка при обработке документа {file_path}: {str(e)}")
             if output_file and output_file.exists():
@@ -970,7 +1173,9 @@ class DocumentProcessor:
                         'height': data['height'][i],
                         'conf': confidence,
                         'lang': 'eng' if all(
-                            c.isascii() for c in text) else 'rus'}
+                            c.isascii() for c in text) else 'rus',
+                        'position': i # Добавляем позицию слова в списке
+                    }
                     words.append(word)
                     logger.debug(
                         f"Распознано слово: '{text}' (уверенность: {confidence}, язык: {word['lang']})")
@@ -985,18 +1190,12 @@ class DocumentProcessor:
     def _extract_data(self, text_data: List[Dict]) -> Dict:
         """
         Извлекает данные из распознанного текста
-        
-        Args:
-            text_data: список словарей с распознанным текстом
-            
-        Returns:
-            Dict: словарь с извлеченными данными
         """
         sensitive_regions = []
         found_surnames = []
+        found_names = []  # <--- добавлено
         medical_data = []
-        mask_context = False
-
+        sensitive_context = []
         try:
             for i, word in enumerate(text_data):
                 try:
@@ -1004,13 +1203,9 @@ class DocumentProcessor:
                     if not word_text:
                         continue
 
-                    # Проверяем на город (в любом регистре)
-                    if word_text in self.cities_to_mask:
-                        mask_context = True
-                        logger.info(f"Найден город для маскирования: {word_text}")
-
-                    # Если мы в контексте после города, маскируем все слова
-                    if mask_context:
+                    # Проверяем на почтовый индекс
+                    is_personal_data, data_type = self._is_numeric_personal_data(word_text)
+                    if data_type == 'Почтовый индекс':
                         sensitive_regions.append({
                             'text': word_text,
                             'confidence': word.get('conf', 0),
@@ -1018,13 +1213,65 @@ class DocumentProcessor:
                             'top': word.get('top', 0),
                             'width': word.get('width', 0),
                             'height': word.get('height', 0),
-                            'type': 'city_context'
+                            'type': data_type,
+                            'position': i # Добавляем позицию
                         })
-                        logger.info(f"Маскирование слова в контексте города: {word_text}")
+                        logger.info(f"Найден почтовый индекс для маскирования: {word_text}")
+                        continue # Продолжаем, чтобы остальные части адреса тоже были проверены
+                    
+                    # Проверяем на город (в любом регистре)
+                    # Мы больше не используем mask_context как флаг для всей строки после города
+                    # Вместо этого, мы будем собирать все части адреса и маскировать их вместе
+                    if word_text in self.cities_to_mask:
+                        sensitive_context.append({
+                            'text': word_text,
+                            'confidence': word.get('conf', 0),
+                            'left': word.get('left', 0),
+                            'top': word.get('top', 0),
+                            'width': word.get('width', 0),
+                            'height': word.get('height', 0),
+                            'type': 'city',
+                            'position': i
+                        })
+                        logger.info(f"Найден город для маскирования: {word_text}")
+                        # Продолжаем, чтобы другие части адреса могли быть добавлены
+                        
+                    # Проверяем на компоненты адреса (улица, дом, корпус, квартира)
+                    # Используем более общие паттерны для обнаружения частей адреса
+                    address_component_patterns = {
+                        'street': r'(?:ул\.?|улица|пер\.?|переулок|пр\.?|проспект|ш\.?|шоссе|наб\.?|набережная|пл\.?|площадь)\s+[А-Яа-яЁё\d\s\.\-]+',
+                        'house_number': r'(?:д\.?|дом)\s*\d+(?:[а-яА-ЯёЁ])?(?:\s*к\.?\s*\d+)?(?::\s*\d+)?',
+                        'building_number': r'(?:корп\.?|корпус)\s*\d+',
+                        'flat_number': r'(?:кв\.?|квартира)\s*\d+'
+                    }
+                    
+                    found_address_component = False
+                    for addr_type, pattern in address_component_patterns.items():
+                        # Проверяем, является ли текущее слово частью такого паттерна
+                        # Для этого собираем небольшой контекст вокруг слова
+                        context_start = max(0, i - 5) # 5 слов назад
+                        context_end = min(len(text_data), i + 5) # 5 слов вперед
+                        context_text = " ".join([w['text'] for w in text_data[context_start:context_end]])
+                        
+                        if re.search(pattern, context_text, re.IGNORECASE):
+                            sensitive_context.append({
+                                'text': word_text,
+                                'confidence': word.get('conf', 0),
+                                'left': word.get('left', 0),
+                                'top': word.get('top', 0),
+                                'width': word.get('width', 0),
+                                'height': word.get('height', 0),
+                                'type': addr_type,
+                                'position': i
+                            })
+                            found_address_component = True
+                            logger.info(f"Найден компонент адреса: {word_text} ({addr_type})")
+                            break
+                    
+                    if found_address_component: # Если это компонент адреса, не проверяем другие типы
                         continue
-
-                    # Проверяем числовые данные
-                    is_personal_data, data_type = self._is_numeric_personal_data(word_text)
+                    
+                    # Проверяем числовые данные (паспорт, СНИЛС, телефон, мед. карта, дата рождения, email)
                     if is_personal_data:
                         sensitive_regions.append({
                             'text': word_text,
@@ -1033,7 +1280,8 @@ class DocumentProcessor:
                             'top': word.get('top', 0),
                             'width': word.get('width', 0),
                             'height': word.get('height', 0),
-                            'type': data_type
+                            'type': data_type,
+                            'position': i # Добавляем позицию
                         })
                         logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
                         continue
@@ -1048,9 +1296,13 @@ class DocumentProcessor:
                             'top': word.get('top', 0),
                             'width': word.get('width', 0),
                             'height': word.get('height', 0),
-                            'type': 'surname'
+                            'type': 'surname',
+                            'position': i # Добавляем позицию
                         })
                         logger.info(f"Найдена фамилия для маскирования: {word_text}")
+                    # Явное определение имени (по базе имён)
+                    if word_text.lower() in self.names:
+                        found_names.append(word_text)
 
                     # Проверяем на медицинские термины
                     for pattern_name, pattern in self.medical_patterns.items():
@@ -1068,11 +1320,16 @@ class DocumentProcessor:
                                     'width': word.get('width', 0),
                                     'height': word.get('height', 0)
                                 })
-
                 except Exception as e:
                     logger.error(f"Ошибка при обработке слова '{word.get('text', '')}': {str(e)}")
                     continue
-
+            
+            # После обработки всех слов, группируем компоненты адресов
+            # Здесь будет логика группировки sensitive_context в полные адреса
+            # Например, по близости слов и последовательности типов
+            grouped_addresses = self._group_address_components(sensitive_context)
+            sensitive_regions.extend(grouped_addresses)
+            
             # Проверяем медицинский контекст
             self._verify_medical_context(text_data, {'medical_data': medical_data})
 
@@ -1082,7 +1339,8 @@ class DocumentProcessor:
             return {
                 'sensitive_regions': sensitive_regions,
                 'medical_data': medical_data,
-                'found_surnames': found_surnames
+                'found_surnames': found_surnames,
+                'found_names': found_names  # <--- добавлено
             }
 
         except Exception as e:
@@ -1090,7 +1348,8 @@ class DocumentProcessor:
             return {
                 'sensitive_regions': [],
                 'medical_data': [],
-                'found_surnames': []
+                'found_surnames': [],
+                'found_names': []  # <--- добавлено
             }
 
     def _mask_sensitive_data(self, image: np.ndarray, sensitive_regions: List[Dict]) -> np.ndarray:
@@ -1116,85 +1375,19 @@ class DocumentProcessor:
                 logger.warning("Нет регионов для маскирования")
                 return masked_image
 
-            # Группируем регионы по типам
-            city_context_regions = [r for r in sensitive_regions if r.get('type') == 'city_context']
-            other_regions = [r for r in sensitive_regions if r.get('type') != 'city_context']
-
-            logger.info(f"Регионы для маскирования: всего {len(sensitive_regions)}, "
-                       f"из них контекст города: {len(city_context_regions)}")
-
-            # Сначала маскируем контекст городов
-            if city_context_regions:
-                # Сортируем регионы по позиции в тексте
-                city_context_regions.sort(key=lambda x: x['position'])
-
-                # Находим непрерывные последовательности регионов
-                current_group = []
-                groups = []
-                for region in city_context_regions:
-                    if not current_group or region['position'] == current_group[-1]['position'] + 1:
-                        current_group.append(region)
-                    else:
-                        if current_group:
-                            groups.append(current_group)
-                        current_group = [region]
-                if current_group:
-                    groups.append(current_group)
-
-                logger.info(f"Сформировано {len(groups)} групп для маскирования контекста города")
-
-                # Маскируем каждую группу отдельно
-                for i, group in enumerate(groups):
-                    try:
-                        # Находим общую область для группы
-                        min_left = min(r['left'] for r in group)
-                        min_top = min(r['top'] for r in group)
-                        max_right = max(r['left'] + r['width'] for r in group)
-                        max_bottom = max(r['top'] + r['height'] for r in group)
-
-                        # Добавляем небольшой отступ
-                        padding = 2
-                        min_left = max(0, min_left - padding)
-                        min_top = max(0, min_top - padding)
-                        max_right = min(masked_image.shape[1], max_right + padding)
-                        max_bottom = min(masked_image.shape[0], max_bottom + padding)
-
-                        # Проверяем корректность координат
-                        if (min_left >= max_right or min_top >= max_bottom or 
-                            max_right > masked_image.shape[1] or max_bottom > masked_image.shape[0]):
-                            logger.warning(f"Некорректные координаты для группы {i+1}: "
-                                         f"left={min_left}, top={min_top}, right={max_right}, bottom={max_bottom}")
-                            continue
-
-                        # Маскируем всю область одним прямоугольником
-                        masked_image[min_top:max_bottom, min_left:max_right] = 0
-
-                        # Проверяем, что маскирование прошло успешно
-                        if np.all(masked_image[min_top:max_bottom, min_left:max_right] == 0):
-                            logger.info(f"Успешно замаскирована группа {i+1}: "
-                                      f"left={min_left}, top={min_top}, right={max_right}, bottom={max_bottom}, "
-                                      f"размер={max_right-min_left}x{max_bottom-min_top}, "
-                                      f"слова: '{group[0]['text']}' - '{group[-1]['text']}'")
-                        else:
-                            logger.warning(f"Неполное маскирование группы {i+1}")
-
-                    except Exception as e:
-                        logger.error(f"Ошибка при маскировании группы {i+1}: {str(e)}")
-                        continue
-
-            # Затем маскируем остальные регионы
-            for region in other_regions:
+            # Маскируем все регионы
+            for i, region in enumerate(sensitive_regions):
                 try:
                     left = int(region.get('left', 0))
                     top = int(region.get('top', 0))
                     width = int(region.get('width', 0))
                     height = int(region.get('height', 0))
-                    
+
                     # Проверяем корректность координат
                     if (left < 0 or top < 0 or width <= 0 or height <= 0 or
                         left + width > masked_image.shape[1] or
                         top + height > masked_image.shape[0]):
-                        logger.warning(f"Некорректные координаты для региона: "
+                        logger.warning(f"Некорректные координаты для региона {i+1}: "
                                      f"left={left}, top={top}, width={width}, height={height}")
                         continue
 
@@ -1210,14 +1403,15 @@ class DocumentProcessor:
 
                     # Проверяем, что маскирование прошло успешно
                     if np.all(masked_image[top:top + height, left:left + width] == 0):
-                        logger.info(f"Успешно замаскирован регион: "
+                        logger.info(f"Успешно замаскирован регион {i+1}: "
                                   f"left={left}, top={top}, width={width}, height={height}, "
-                                  f"текст: '{region.get('text', '')}'")
+                                  f"текст: '{region.get('text', '')}', "
+                                  f"тип: '{region.get('type', 'N/A')}'")
                     else:
-                        logger.warning(f"Неполное маскирование региона: '{region.get('text', '')}'")
+                        logger.warning(f"Неполное маскирование региона {i+1}: '{region.get('text', '')}'")
 
                 except Exception as e:
-                    logger.error(f"Ошибка при маскировании региона: {str(e)}")
+                    logger.error(f"Ошибка при маскировании региона {i+1}: {str(e)}")
                     continue
 
             return masked_image
@@ -1240,7 +1434,11 @@ class DocumentProcessor:
         """
         word_lower = word.lower()
 
-        # 1. Базовые проверки длины и содержания
+        # 1. Проверка на ключевые слова адресов (должны быть замаскированы)
+        if word_lower in self.address_keywords:
+            return False
+
+        # 2. Базовые проверки длины и содержания
         if not word or not word.strip():
             return True
         letters_only = ''.join(c for c in word if c.isalpha())
@@ -1251,7 +1449,7 @@ class DocumentProcessor:
         if not word[0].isupper(): # Если слово не начинается с заглавной буквы, обычно не является именем собственным
             return True
 
-        # 2. Проверка на наличие "ФИО" (явное указание на персональные данные)
+        # 3. Проверка на наличие "ФИО" (явное указание на персональные данные)
         if 'фио' in word_lower:
             return False
         
@@ -1264,23 +1462,23 @@ class DocumentProcessor:
         if 'фио' in context_text:
             return False
 
-        # 3. Проверка на UUID и длинные буквенно-цифровые коды (сертификаты)
+        # 4. Проверка на UUID и длинные буквенно-цифровые коды (сертификаты)
         if re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', word_lower):
             return False
         # Сертификат: пример: 74 89 C7 97 45 6A DB 47 2A 02 16 BC A2 4F 22 F0 (пробелы удаляются для проверки)
         if re.match(r'^([0-9a-fA-F]{2}\\s){15}[0-9a-fA-F]{2}$|^[0-9a-fA-F]{32,48}$', word.lower().replace(' ', '')):
             return False
 
-        # 4. Проверка на медицинские термины и разрешенные слова (не маскируются)
+        # 5. Проверка на медицинские термины и разрешенные слова (не маскируются)
         if word_lower in self.medical_terms or word_lower in self.allowed_words:
             return True
 
-        # 5. Проверка на числовые персональные данные (паспорт, СНИЛС, телефон и т.д.)
+        # 6. Проверка на числовые персональные данные (паспорт, СНИЛС, телефон и т.д.)
         is_personal_numeric, _ = self._is_numeric_personal_data(word)
         if is_personal_numeric:
             return False
 
-        # 6. Проверка на фамилии, отчества или имена (самая сложная часть, требует контекста)
+        # 7. Проверка на фамилии, отчества или имена (самая сложная часть, требует контекста)
         is_personal_name_component = (
             word_lower in self.surnames or 
             word_lower in self.patronymics or
@@ -1329,7 +1527,7 @@ class DocumentProcessor:
             else:
                 return True # Разрешаем (это ФИО мед. персонала, не в контексте пациента)
 
-        # 7. Проверка на инициалы (пропускаем)
+        # 8. Проверка на инициалы (пропускаем)
         if len(word) <= 2 and word[0].isupper():
             # Если это последнее слово или следующее слово тоже инициал - пропускаем
             if (current_index == len(text_data) - 1 or
@@ -1339,8 +1537,89 @@ class DocumentProcessor:
                    text_data[current_index + 1]['text'][0].isupper())))):
                     return True
 
-        # 8. По умолчанию разрешаем слово
+        # 9. По умолчанию разрешаем слово
         return True
+
+    def _group_address_components(self, sensitive_context: List[Dict]) -> List[Dict]:
+        """
+        Группирует компоненты адреса (город, улица, номер дома и т.д.) в полные адреса.
+        
+        Args:
+            sensitive_context: список словарей с распознанными компонентами адреса.
+            
+        Returns:
+            List[Dict]: список словарей, представляющих сгруппированные адреса для маскирования.
+        """
+        if not sensitive_context:
+            return []
+
+        # Сортируем компоненты по их позиции в тексте
+        sensitive_context.sort(key=lambda x: x['position'])
+
+        grouped_addresses = []
+        current_address_group = []
+
+        for i, component in enumerate(sensitive_context):
+            if not current_address_group:
+                current_address_group.append(component)
+            else:
+                # Проверяем, находится ли текущий компонент рядом с предыдущим
+                # Если слова находятся на одной строке и не слишком далеко друг от друга,
+                # считаем их частью одного адреса.
+                prev_component = current_address_group[-1]
+                
+                # Разница по вертикали должна быть небольшой (на одной строке)
+                is_same_line = abs(component['top'] - prev_component['top']) < (prev_component['height'] * 0.7)
+                
+                # Разница по горизонтали не должна быть слишком большой (слова рядом)
+                is_close_horizontally = (component['left'] - (prev_component['left'] + prev_component['width'])) < (prev_component['width'] * 2) # Максимум 2 ширины предыдущего слова между ними
+                
+                # Дополнительная проверка на разрыв строк - если есть большая вертикальная разница,
+                # это, скорее всего, новый адрес или другой блок текста
+                if (is_same_line and
+                    is_close_horizontally and
+                    component['position'] == prev_component['position'] + 1): # Проверяем, что слова идут последовательно
+                    current_address_group.append(component)
+                else:
+                    # Если группа прервалась, добавляем текущую группу в результат
+                    if current_address_group:
+                        # Создаем единый регион для маскирования
+                        min_left = min(r['left'] for r in current_address_group)
+                        min_top = min(r['top'] for r in current_address_group)
+                        max_right = max(r['left'] + r['width'] for r in current_address_group)
+                        max_bottom = max(r['top'] + r['height'] for r in current_address_group)
+                        
+                        full_address_text = " ".join(r['text'] for r in current_address_group)
+                        
+                        grouped_addresses.append({
+                            'text': full_address_text,
+                            'left': min_left,
+                            'top': min_top,
+                            'width': max_right - min_left,
+                            'height': max_bottom - min_top,
+                            'type': 'full_address'
+                        })
+                    current_address_group = [component]
+
+        # Добавляем последнюю сгруппированную группу, если она есть
+        if current_address_group:
+            min_left = min(r['left'] for r in current_address_group)
+            min_top = min(r['top'] for r in current_address_group)
+            max_right = max(r['left'] + r['width'] for r in current_address_group)
+            max_bottom = max(r['top'] + r['height'] for r in current_address_group)
+            
+            full_address_text = " ".join(r['text'] for r in current_address_group)
+            
+            grouped_addresses.append({
+                'text': full_address_text,
+                'left': min_left,
+                'top': min_top,
+                'width': max_right - min_left,
+                'height': max_bottom - min_top,
+                'type': 'full_address'
+            })
+            
+        return grouped_addresses
 
     def _extract_patient_info(self, text_data: List[Dict]) -> Optional[Dict]:
         """
@@ -1390,7 +1669,7 @@ class DocumentProcessor:
                 break
         
         # Проверяем, что фамилия есть в базе данных
-        if surname and surname.lower() in self.russian_surnames:
+        if surname and surname.lower() in self.surnames:
             logger.info(f"Найдена фамилия в базе данных: {surname}")
             if name:
                 logger.info(f"Найдено имя: {name}")
@@ -1407,61 +1686,25 @@ class DocumentProcessor:
         Проверяет, является ли текст числовыми персональными данными
         
         Args:
-            text: текст для проверки
+            text: проверяемый текст
             
         Returns:
             Tuple[bool, str]: (является ли персональными данными, тип данных)
         """
-        # Очищаем текст от пробелов и дефисов для проверки
+        # Очищаем текст от пробелов и дефисов для проверки (для некоторых паттернов)
         clean_text = re.sub(r'[\s\-]', '', text)
-        
-        # Проверяем каждый тип данных
-        for data_type, pattern_info in self.numeric_patterns.items():
-            # Проверяем основной паттерн
-            if re.match(pattern_info['pattern'], text) or re.match(pattern_info['pattern'], clean_text):
-                # Если есть информация об ошибках OCR, проверяем возможные варианты
-                if 'ocr_errors' in pattern_info:
-                    # Проверяем все возможные варианты с ошибками OCR
-                    for digit, possible_errors in pattern_info['ocr_errors'].items():
-                        for error in possible_errors:
-                            # Заменяем цифру на возможную ошибку OCR
-                            variant = clean_text.replace(digit, error)
-                            if re.match(pattern_info['pattern'], variant):
-                                return True, pattern_info['description']
-                return True, pattern_info['description']
-        
-        # Проверяем телефонные номера с учетом международного формата
-        phone_patterns = [
-            r'^\+?[78][-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Российский формат
-            r'^\+?\d{1,3}[-\s]?\(?\d{2,3}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Международный формат
-            r'^\+?\d{1,3}[-\s]?\d{2,3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Упрощенный международный
-            r'^\d{3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$',  # Локальный формат
-            r'^8[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}$'  # Альтернативный российский
-        ]
-        
-        for pattern in phone_patterns:
-            if re.match(pattern, text) or re.match(pattern, clean_text):
-                return True, "Телефон"
-        
-        # Проверяем ИНН с учетом возможных ошибок OCR
-        inn_patterns = [
-            r'^\d{10}$',  # ИНН юр. лица
-            r'^\d{12}$',  # ИНН физ. лица
-            r'^(?:\d{2}[-\s]?){5}\d{2}$',  # С разделителями
-            r'^(?:\d{3}[-\s]?){3}\d{3}$',
-            r'^(?:\d{4}[-\s]?){2}\d{4}$',
-            r'^(?:\d{6}[-\s]?)\d{4}$',
-            r'^(?:\d{5}[-\s]?)\d{5}$',
-            r'^(?:\d{4}[-\s]?)\d{6}$',
-            r'^(?:\d{3}[-\s]?)\d{7}$',
-            r'^(?:\d{2}[-\s]?)\d{8}$',
-            r'^\d{1}[-\s]?\d{9}$'
-        ]
-        
-        for pattern in inn_patterns:
-            if re.match(pattern, text) or re.match(pattern, clean_text):
-                return True, "ИНН"
-        
+
+        # Проверяем каждый паттерн из self.numeric_patterns
+        for pattern_name, pattern_info in self.numeric_patterns.items():
+            pattern = pattern_info['pattern']
+            description = pattern_info['description']
+
+            # Для email и birth_date используем исходный текст, для остальных - очищенный
+            text_to_match = text if pattern_name in ['email', 'birth_date'] else clean_text
+
+            if re.match(pattern, text_to_match, re.IGNORECASE): # Добавил re.IGNORECASE
+                return True, description
+
         return False, ""
 
     def _verify_medical_context(
