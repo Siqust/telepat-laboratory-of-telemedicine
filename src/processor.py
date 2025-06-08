@@ -176,11 +176,15 @@ class DocumentProcessor:
         self.translit_surnames = set()  # Будет заполнено в _load_surnames
         self.cities_to_mask = set()  # Будет заполнено в _load_cities
         self.medical_terms = set()  # Будет заполнено в _load_medical_terms
+        self.patronymics = set()  # Будет заполнено в _load_patronymics
+        self.names = set()  # Будет заполнено в _load_names
         
         # Загрузка медицинских терминов и других данных
         await self._load_medical_terms()
         await self._load_surnames()
         await self._load_cities()
+        await self._load_patronymics()
+        await self._load_names()
         
         # Проверяем доступность API
         await self.deepseek_client._check_api_availability()
@@ -238,6 +242,48 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Ошибка при загрузке городов: {e}")
             self.cities_to_mask = set()
+
+    async def _load_patronymics(self) -> None:
+        """
+        Загружает список отчеств из файла
+        """
+        try:
+            patronymics_file = Path('src/data/russian_patronymics.txt')
+            if not patronymics_file.exists():
+                logger.error(f"Файл со списком отчеств не найден: {patronymics_file}")
+                return
+
+            with open(patronymics_file, 'r', encoding='utf-8') as f:
+                self.patronymics = {line.strip().lower() for line in f if line.strip()}
+                self.translit_patronymics = {transliterate(patronymic) for patronymic in self.patronymics}
+            
+            logger.info(f"Загружено {len(self.patronymics)} отчеств из файла")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке отчеств: {e}")
+            self.patronymics = set()
+            self.translit_patronymics = set()
+
+    async def _load_names(self) -> None:
+        """
+        Загружает список имен из файла
+        """
+        try:
+            names_file = Path('src/data/russian_names.txt')
+            if not names_file.exists():
+                logger.error(f"Файл со списком имен не найден: {names_file}")
+                return
+
+            with open(names_file, 'r', encoding='utf-8') as f:
+                self.names = {line.strip().lower() for line in f if line.strip()}
+                self.translit_names = {transliterate(name) for name in self.names}
+            
+            logger.info(f"Загружено {len(self.names)} имен из файла")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке имен: {e}")
+            self.names = set()
+            self.translit_names = set()
 
     async def _load_medical_terms(self) -> None:
         """
@@ -309,9 +355,9 @@ class DocumentProcessor:
                                     f"Файл {file} все еще используется, пропускаем")
                         continue
                     except Exception as e:
-                                logger.warning(
-                                    f"Не удалось удалить файл {file}: {str(e)}")
-                                continue
+                        logger.warning(
+                            f"Не удалось удалить файл {file}: {str(e)}")
+                        continue
                     except Exception as e:
                         logger.warning(
                             f"Ошибка при обработке файла {file}: {str(e)}")
@@ -321,7 +367,7 @@ class DocumentProcessor:
                 try:
                     temp_dir.rmdir()
                     logger.debug("Временная директория успешно удалена")
-        except Exception as e:
+                except Exception as e:
                     logger.warning(
                         f"Не удалось удалить временную директорию: {str(e)}")
 
@@ -339,6 +385,91 @@ class DocumentProcessor:
             bool: является ли слово медицинским термином
         """
         return word.lower() in self.medical_terms
+
+    def _fix_image_orientation(self, image: np.ndarray) -> np.ndarray:
+        """
+        Определяет и исправляет ориентацию изображения
+        
+        Args:
+            image: исходное изображение
+            
+        Returns:
+            np.ndarray: изображение с исправленной ориентацией
+        """
+        try:
+            logger.info("Проверка ориентации изображения...")
+            
+            # Пробуем определить ориентацию с помощью Tesseract
+            osd = pytesseract.image_to_osd(image)
+            angle = int(re.search(r'Rotate: (\d+)', osd).group(1))
+            
+            if angle != 0:
+                logger.info(f"Обнаружен поворот изображения на {angle} градусов")
+                # Поворачиваем изображение
+                if angle == 90:
+                    image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+                elif angle == 180:
+                    image = cv2.rotate(image, cv2.ROTATE_180)
+                elif angle == 270:
+                    image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                logger.info("Изображение повернуто")
+                return image
+                
+            # Если Tesseract не определил поворот, проверяем направление текста
+            # Получаем все строки текста
+            data = pytesseract.image_to_data(
+                image, 
+                lang='rus+eng',
+                config='--psm 6',
+                output_type=pytesseract.Output.DICT
+            )
+            
+            # Считаем количество строк с разной ориентацией
+            horizontal_lines = 0
+            vertical_lines = 0
+            
+            current_line = []
+            current_top = None
+            
+            for i in range(len(data['text'])):
+                if not data['text'][i].strip():
+                    continue
+                    
+                if current_top is None:
+                    current_top = data['top'][i]
+                    current_line.append(data['left'][i])
+                elif abs(data['top'][i] - current_top) < data['height'][i] * 0.5:
+                    # Слова на одной строке
+                    current_line.append(data['left'][i])
+                else:
+                    # Новая строка
+                    if len(current_line) > 1:
+                        # Проверяем направление строки
+                        if max(current_line) - min(current_line) > data['height'][i]:
+                            horizontal_lines += 1
+                        else:
+                            vertical_lines += 1
+                    current_line = [data['left'][i]]
+                    current_top = data['top'][i]
+            
+            # Проверяем последнюю строку
+            if len(current_line) > 1:
+                if max(current_line) - min(current_line) > data['height'][i]:
+                    horizontal_lines += 1
+                else:
+                    vertical_lines += 1
+            
+            # Если вертикальных строк больше, поворачиваем изображение
+            if vertical_lines > horizontal_lines:
+                logger.info("Обнаружена преимущественно вертикальная ориентация текста")
+                image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+                logger.info("Изображение повернуто на 90 градусов")
+            
+            return image
+            
+        except Exception as e:
+            logger.warning(f"Ошибка при определении ориентации изображения: {str(e)}")
+            return image
 
     async def process_document(self, file_path: str, clinic_name: str, output_dir: str) -> Tuple[str, Dict]:
         """Обработка документа: конвертация, распознавание текста, маскирование и сохранение"""
@@ -392,6 +523,9 @@ class DocumentProcessor:
 
             if image is None:
                 raise ValueError(f"Не удалось прочитать изображение: {temp_file}")
+
+            # Исправляем ориентацию изображения
+            image = self._fix_image_orientation(image)
 
             # Распознавание текста
             text_data = self._recognize_text(image)
@@ -479,7 +613,7 @@ class DocumentProcessor:
                         'text': word_text
                     })
                 
-                # Проверка на фамилии и имена
+                # Проверяем на фамилии и имена
                 if not self._is_allowed_word(word_text, text_data, i):
                     sensitive_regions.append({
                         'left': word_data['left'],
@@ -552,7 +686,7 @@ class DocumentProcessor:
             
             return str(output_file), analysis_result
                 
-            except Exception as e:
+        except Exception as e:
             logger.error(f"Ошибка при обработке документа {file_path}: {str(e)}")
             if output_file and output_file.exists():
                 try:
@@ -769,11 +903,11 @@ class DocumentProcessor:
         mask_context = False
 
         try:
-        for i, word in enumerate(text_data):
-            try:
-                word_text = word['text'].strip()
-                if not word_text:
-                    continue
+            for i, word in enumerate(text_data):
+                try:
+                    word_text = word['text'].strip()
+                    if not word_text:
+                        continue
 
                     # Проверяем на город (в любом регистре)
                     if word_text in self.cities_to_mask:
@@ -794,43 +928,43 @@ class DocumentProcessor:
                         logger.info(f"Маскирование слова в контексте города: {word_text}")
                         continue
 
-                # Проверяем числовые данные
-                is_personal_data, data_type = self._is_numeric_personal_data(word_text)
-                if is_personal_data:
-                    sensitive_regions.append({
-                        'text': word_text,
-                        'confidence': word.get('conf', 0),
-                        'left': word.get('left', 0),
-                        'top': word.get('top', 0),
-                        'width': word.get('width', 0),
-                        'height': word.get('height', 0),
-                        'type': data_type
-                    })
-                    logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
-                    continue
+                    # Проверяем числовые данные
+                    is_personal_data, data_type = self._is_numeric_personal_data(word_text)
+                    if is_personal_data:
+                        sensitive_regions.append({
+                            'text': word_text,
+                            'confidence': word.get('conf', 0),
+                            'left': word.get('left', 0),
+                            'top': word.get('top', 0),
+                            'width': word.get('width', 0),
+                            'height': word.get('height', 0),
+                            'type': data_type
+                        })
+                        logger.info(f"Найдены числовые персональные данные: {word_text} ({data_type})")
+                        continue
 
                     # Проверяем на фамилии и персональные данные
-                if not self._is_allowed_word(word_text, text_data, i):
-                    found_surnames.append(word_text)
-                    sensitive_regions.append({
-                        'text': word_text,
-                        'confidence': word.get('conf', 0),
-                        'left': word.get('left', 0),
-                        'top': word.get('top', 0),
-                        'width': word.get('width', 0),
-                        'height': word.get('height', 0),
-                        'type': 'surname'
-                    })
+                    if not self._is_allowed_word(word_text, text_data, i):
+                        found_surnames.append(word_text)
+                        sensitive_regions.append({
+                            'text': word_text,
+                            'confidence': word.get('conf', 0),
+                            'left': word.get('left', 0),
+                            'top': word.get('top', 0),
+                            'width': word.get('width', 0),
+                            'height': word.get('height', 0),
+                            'type': 'surname'
+                        })
                         logger.info(f"Найдена фамилия для маскирования: {word_text}")
 
                     # Проверяем на медицинские термины
-            for pattern_name, pattern in self.medical_patterns.items():
+                    for pattern_name, pattern in self.medical_patterns.items():
                         matches = re.finditer(pattern, word_text)
-                for match in matches:
+                        for match in matches:
                             value = match.group(1) if match.groups() else match.group(0)
                             if value:
-                    medical_data.append({
-                        'type': pattern_name,
+                                medical_data.append({
+                                    'type': pattern_name,
                                     'value': value,
                                     'text': word_text,
                                     'confidence': word.get('conf', 0),
@@ -840,7 +974,7 @@ class DocumentProcessor:
                                     'height': word.get('height', 0)
                                 })
 
-        except Exception as e:
+                except Exception as e:
                     logger.error(f"Ошибка при обработке слова '{word.get('text', '')}': {str(e)}")
                     continue
 
@@ -850,8 +984,8 @@ class DocumentProcessor:
             # Проверяем согласованность диагнозов
             self._verify_diagnoses({'medical_data': medical_data})
         
-        return {
-            'sensitive_regions': sensitive_regions,
+            return {
+                'sensitive_regions': sensitive_regions,
                 'medical_data': medical_data,
                 'found_surnames': found_surnames
             }
@@ -862,7 +996,7 @@ class DocumentProcessor:
                 'sensitive_regions': [],
                 'medical_data': [],
                 'found_surnames': []
-        }
+            }
 
     def _mask_sensitive_data(self, image: np.ndarray, sensitive_regions: List[Dict]) -> np.ndarray:
         """
@@ -881,7 +1015,7 @@ class DocumentProcessor:
             logger.info(f"Количество регионов для маскирования: {len(sensitive_regions)}")
 
             # Создаем копию изображения для маскирования
-        masked_image = image.copy()
+            masked_image = image.copy()
 
             if not sensitive_regions:
                 logger.warning("Нет регионов для маскирования")
@@ -955,19 +1089,19 @@ class DocumentProcessor:
 
             # Затем маскируем остальные регионы
             for region in other_regions:
-            try:
-                left = int(region.get('left', 0))
-                top = int(region.get('top', 0))
-                width = int(region.get('width', 0))
-                height = int(region.get('height', 0))
-                
+                try:
+                    left = int(region.get('left', 0))
+                    top = int(region.get('top', 0))
+                    width = int(region.get('width', 0))
+                    height = int(region.get('height', 0))
+                    
                     # Проверяем корректность координат
-                if (left < 0 or top < 0 or width <= 0 or height <= 0 or
-                    left + width > masked_image.shape[1] or
-                    top + height > masked_image.shape[0]):
+                    if (left < 0 or top < 0 or width <= 0 or height <= 0 or
+                        left + width > masked_image.shape[1] or
+                        top + height > masked_image.shape[0]):
                         logger.warning(f"Некорректные координаты для региона: "
                                      f"left={left}, top={top}, width={width}, height={height}")
-                    continue
+                        continue
 
                     # Добавляем небольшой отступ
                     padding = 2
@@ -987,11 +1121,11 @@ class DocumentProcessor:
                     else:
                         logger.warning(f"Неполное маскирование региона: '{region.get('text', '')}'")
 
-            except Exception as e:
+                except Exception as e:
                     logger.error(f"Ошибка при маскировании региона: {str(e)}")
-                continue
+                    continue
 
-        return masked_image
+            return masked_image
 
         except Exception as e:
             logger.error(f"Критическая ошибка при маскировании: {str(e)}")
@@ -1009,74 +1143,98 @@ class DocumentProcessor:
         Returns:
             bool: True если слово разрешено, False если подлежит маскированию
         """
-        # Базовая проверка длины и содержания
+        word_lower = word.lower()
+
+        # 1. Базовые проверки длины и содержания
         if not word or not word.strip():
             return True
-
-        # Удаляем все небуквенные символы
         letters_only = ''.join(c for c in word if c.isalpha())
         if not letters_only:
             return True
-
-        # Проверяем длину слова после удаления небуквенных символов
-        if len(letters_only) < 3:  # Слова короче 3 букв пропускаем
+        if len(letters_only) < 3: # Слова короче 3 букв пропускаем (кроме инициалов, которые обрабатываются позже)
+            return True
+        if not word[0].isupper(): # Если слово не начинается с заглавной буквы, обычно не является именем собственным
             return True
 
-        # Проверяем, начинается ли слово с заглавной буквы
-        if not word[0].isupper():
-            return True
-
-        word_lower = letters_only.lower()
+        # 2. Проверка на наличие "ФИО" (явное указание на персональные данные)
+        if 'фио' in word_lower:
+            return False
         
-        # Проверяем на медицинские термины
-        if word_lower in self.medical_terms:
-            return True
-
-        # Проверяем на разрешенные слова
-        if word_lower in self.allowed_words:
-            return True
-        
-        # Проверяем на фамилии
-        is_surname = (word_lower in self.surnames or 
-                     transliterate(word_lower) in self.surnames or
-                     word_lower in self.translit_surnames or
-                     transliterate(word_lower) in self.translit_surnames)
-
-        # Если слово похоже на фамилию, проверяем контекст
-        if is_surname:
-            # Проверяем на типичные медицинские контексты
-            medical_contexts = [
-                'врач', 'доктор', 'профессор', 'академик', 'заведующий',
-                'главный', 'старший', 'младший', 'ординатор', 'интерн'
-            ]
-
-            # Получаем ближайший контекст (2 слова слева и справа)
-            start_idx = max(0, current_index - 2)
-            end_idx = min(len(text_data), current_index + 3)
-            context_words = [w['text'].lower() for w in text_data[start_idx:end_idx]]
+        # Проверяем контекст на наличие "ФИО"
+        # Получаем ближайший контекст (2 слова слева и справа)
+        start_idx_context = max(0, current_index - 2)
+        end_idx_context = min(len(text_data), current_index + 3)
+        context_words = [w['text'].lower() for w in text_data[start_idx_context:end_idx_context]]
         context_text = ' '.join(context_words)
-        
-            # Если слово в медицинском контексте - пропускаем
-            if any(ctx in context_text for ctx in medical_contexts):
-                return True
+        if 'фио' in context_text:
+            return False
 
-            # Проверяем на шаблоны медицинских документов
-            template_patterns = [
-                r'(?:^|\s)пациент[а-я]*\s+[А-Я][а-я]+(?:\s|$)',
-                r'(?:^|\s)больной\s+[А-Я][а-я]+(?:\s|$)',
-                r'(?:^|\s)ф\.и\.о\.\s*[А-Я][а-я]+(?:\s|$)',
-                r'(?:^|\s)фамилия\s*[А-Я][а-я]+(?:\s|$)',
-                r'(?:^|\s)имя\s*[А-Я][а-я]+(?:\s|$)',
-                r'(?:^|\s)отчество\s*[А-Я][а-я]+(?:\s|$)'
+        # 3. Проверка на UUID и длинные буквенно-цифровые коды (сертификаты)
+        if re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', word_lower):
+            return False
+        # Сертификат: пример: 74 89 C7 97 45 6A DB 47 2A 02 16 BC A2 4F 22 F0 (пробелы удаляются для проверки)
+        if re.match(r'^([0-9a-fA-F]{2}\\s){15}[0-9a-fA-F]{2}$|^[0-9a-fA-F]{32,48}$', word.lower().replace(' ', '')):
+            return False
+
+        # 4. Проверка на медицинские термины и разрешенные слова (не маскируются)
+        if word_lower in self.medical_terms or word_lower in self.allowed_words:
+            return True
+
+        # 5. Проверка на числовые персональные данные (паспорт, СНИЛС, телефон и т.д.)
+        is_personal_numeric, _ = self._is_numeric_personal_data(word)
+        if is_personal_numeric:
+            return False
+
+        # 6. Проверка на фамилии, отчества или имена (самая сложная часть, требует контекста)
+        is_personal_name_component = (
+            word_lower in self.surnames or 
+            word_lower in self.patronymics or
+            word_lower in self.names or
+            transliterate(word_lower) in self.surnames or
+            transliterate(word_lower) in self.patronymics or
+            transliterate(word_lower) in self.names
+        )
+
+        if is_personal_name_component:
+            # Проверяем, является ли предыдущее слово медицинским званием/должностью
+            is_preceded_by_medical_title = False
+            if current_index > 0:
+                prev_word_text = text_data[current_index - 1]['text'].lower()
+                medical_titles = [
+                    'врач', 'доктор', 'профессор', 'академик', 'заведующий',
+                    'главный', 'старший', 'младший', 'ординатор', 'интерн',
+                    'биолог'
+                ]
+                if prev_word_text in medical_titles:
+                    is_preceded_by_medical_title = True
+
+            # Проверяем на шаблоны медицинских документов, указывающие на ФИО пациента
+            # (например, "Пациент ФИО", "Фамилия:")
+            patient_context_patterns = [
+                r'(?:^|\s)пациент[а-я]*\s+',
+                r'(?:^|\s)больной\s+',
+                r'(?:^|\s)ф\.и\.о\.\s*',
+                r'(?:^|\s)фамилия[:\s]+',
+                r'(?:^|\s)имя[:\s]+',
+                r'(?:^|\s)отчество[:\s]+'
             ]
+            is_in_patient_context = False
+            # Проверяем не только слово, но и ближайший контекст
+            for pattern in patient_context_patterns:
+                if re.search(pattern, context_text, re.IGNORECASE):
+                    is_in_patient_context = True
+                    break
 
-            if any(re.search(pattern, context_text, re.IGNORECASE) for pattern in template_patterns):
-            return False
-        
-            # Если слово похоже на фамилию и не в медицинском контексте - маскируем
-            return False
-        
-        # Проверяем на инициалы
+            # Логика маскирования для компонентов личных имен:
+            # Маскируем, если:
+            #   - НЕ предшествует медицинскому званию (т.е. это не ФИО врача/биолога), ИЛИ
+            #   - Находится в явном контексте пациента (например, "Пациент Федоренко")
+            if (not is_preceded_by_medical_title) or is_in_patient_context:
+                return False # Маскируем
+            else:
+                return True # Разрешаем (это ФИО мед. персонала, не в контексте пациента)
+
+        # 7. Проверка на инициалы (пропускаем)
         if len(word) <= 2 and word[0].isupper():
             # Если это последнее слово или следующее слово тоже инициал - пропускаем
             if (current_index == len(text_data) - 1 or
@@ -1086,12 +1244,7 @@ class DocumentProcessor:
                    text_data[current_index + 1]['text'][0].isupper())))):
                     return True
 
-        # Проверяем на числовые персональные данные
-        is_personal, _ = self._is_numeric_personal_data(word)
-        if is_personal:
-        return False
-
-        # По умолчанию разрешаем слово
+        # 8. По умолчанию разрешаем слово
         return True
 
     def _extract_patient_info(self, text_data: List[Dict]) -> Optional[Dict]:
@@ -1164,9 +1317,17 @@ class DocumentProcessor:
         Returns:
             Tuple[bool, str]: (является ли персональными данными, описание типа данных)
         """
+        # Проверяем на последовательность из 6 цифр без разделителей
+        if re.match(r'^\d{6}$', text):
+            return True, "6-значный номер"
+            
         # Удаляем все нецифровые символы для проверки длины
         digits_only = ''.join(c for c in text if c.isdigit())
         
+        # Проверяем на последовательность из 16 цифр
+        if len(digits_only) == 16:
+            return True, "16-значный номер"
+            
         # Проверяем длину
         if len(digits_only) not in self.numeric_lengths:
             # Дополнительные проверки из project2
@@ -1187,6 +1348,8 @@ class DocumentProcessor:
                 r'\+?[78][\s\-\(]?\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}',
                 # 999-123-45-67
                 r'\d{3}[\s\-\(]?\d{3}[\s\-\(]?\d{2}[\s\-\(]?\d{2}',
+                # 6-значные номера с дефисами (например, 73-40-06)
+                r'^\d{2}-\d{2}-\d{2}$',
             ]
 
             for pattern in phone_patterns:
@@ -1202,6 +1365,10 @@ class DocumentProcessor:
             for pattern in med_card_patterns:
                 if re.match(pattern, text):
                     return True, "Номер медицинской карты"
+
+            # Проверка на даты в формате DD.MM.YYYY
+            if re.match(r'^\d{2}\.\d{2}\.\d{4}$', text):
+                return True, "Дата"
 
             return False, ""
             
