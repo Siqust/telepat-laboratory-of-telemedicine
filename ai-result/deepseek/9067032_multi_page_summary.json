@@ -1,0 +1,10 @@
+{
+  "chatgpt": {
+    "has_deviations": true,
+    "deviations": [
+      "Антитела к вирусу кори (Measles), IgG: 1.93 (положительно, норма > 1.20)"
+    ],
+    "raw_response": "Да  \nАнтитела к вирусу кори (Measles), IgG: 1.93 (положительно, норма > 1.20)",
+    "files_analyzed": 1
+  }
+}

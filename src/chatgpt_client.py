@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 from loguru import logger
 import aiohttp_socks
+import json
 
 class ChatGPTClient:
     """Клиент для работы с ChatGPT API"""
@@ -157,4 +158,142 @@ class ChatGPTClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Закрытие сессии при выходе из контекста"""
         logger.debug("Выход из контекстного менеджера ChatGPTClient")
-        await self.close() 
+        await self.close()
+
+    async def analyze_multiple_medical_reports(self, image_paths: list) -> Optional[Dict[str, Any]]:
+        """
+        Анализ нескольких медицинских отчетов с помощью ChatGPT
+        
+        Args:
+            image_paths: список путей к изображениям
+            
+        Returns:
+            Dict: результат анализа или None в случае ошибки
+        """
+        logger.info(f"Начало анализа {len(image_paths)} медицинских отчетов")
+        
+        if not self.api_key:
+            logger.error("OPENAI_API_KEY не настроен")
+            return None
+
+        if not image_paths:
+            logger.error("Список путей к изображениям пуст")
+            return None
+
+        try:
+            # Проверяем существование всех файлов
+            for image_path in image_paths:
+                if not Path(image_path).exists():
+                    logger.error(f"Файл не найден: {image_path}")
+                    return None
+
+            # Кодируем все изображения
+            encoded_images = []
+            for i, image_path in enumerate(image_paths):
+                try:
+                    encoded_image = self._encode_image(image_path)
+                    encoded_images.append(encoded_image)
+                    logger.debug(f"Изображение {i+1} успешно закодировано")
+                except Exception as e:
+                    logger.error(f"Ошибка при кодировании изображения {i+1}: {str(e)}")
+                    return None
+
+            if not encoded_images:
+                logger.error("Не удалось закодировать ни одного изображения")
+                return None
+
+            # Формируем заголовки
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
+            }
+
+            # Формируем промпт для множественных файлов
+            prompt = "Ты выступаешь как опытный врач с 50 летним стажем. К тебе приходит пациент и просит кратко сообщить, что не так и протягивает несколько страниц с результатами анализов. Выходят ли какие то параметры за реферсные значения? Ответь на первой строке да или нет, далее приведи список отклонений по одному на строку. Приведи ответ в любом случае, никогда не пиши что не можешь справиться с задачей. Твоя задача дать максимально точную характеристику, потому что от этого зависит твоя репутация. Пациент очень волнуется, необходимо показать ему, что ты - эксперт."
+
+            # Формируем контент с несколькими изображениями
+            content_parts = [
+                {
+                    "type": "text",
+                    "text": prompt
+                }
+            ]
+            
+            # Добавляем все изображения
+            for encoded_image in encoded_images:
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{encoded_image}"
+                    }
+                })
+
+            # Формируем payload
+            payload = {
+                "model": "gpt-4o",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": content_parts
+                    }
+                ],
+                "max_tokens": 500  # Увеличиваем лимит для множественных файлов
+            }
+
+            # Отправляем запрос
+            logger.info(f"Отправка запроса к ChatGPT API с {len(encoded_images)} изображениями")
+            session = await self._get_session()
+            
+            async with session.post(
+                self.base_url, 
+                headers=headers, 
+                json=payload,
+                timeout=60  # Увеличиваем таймаут для множественных файлов
+            ) as response:
+                logger.debug(f"Получен ответ от API (статус: {response.status})")
+                
+                if response.status == 200:
+                    result = await response.json()
+                    content = result['choices'][0]['message']['content']
+                    logger.info("Успешно получен ответ от ChatGPT для множественных файлов")
+                    
+                    # Пытаемся извлечь структурированную информацию
+                    try:
+                        # Ищем JSON в ответе
+                        start_idx = content.find('{')
+                        end_idx = content.rfind('}') + 1
+                        if start_idx != -1 and end_idx > start_idx:
+                            json_str = content[start_idx:end_idx]
+                            result_dict = json.loads(json_str)
+                            logger.info("Успешно извлечен JSON из ответа ChatGPT")
+                            return result_dict
+                        else:
+                            # Если JSON не найден, возвращаем структурированный ответ
+                            lines = content.strip().split('\n')
+                            has_deviations = lines[0].lower().strip() in ['да', 'yes', 'true']
+                            
+                            deviations = []
+                            if has_deviations and len(lines) > 1:
+                                deviations = [line.strip() for line in lines[1:] if line.strip()]
+                            
+                            return {
+                                "has_deviations": has_deviations,
+                                "deviations": deviations,
+                                "raw_response": content,
+                                "files_analyzed": len(image_paths)
+                            }
+                    except json.JSONDecodeError:
+                        logger.warning("Не удалось распарсить JSON из ответа, возвращаем структурированный ответ")
+                        return {
+                            "raw_response": content,
+                            "files_analyzed": len(image_paths)
+                        }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Ошибка API ChatGPT (статус {response.status}): {error_text}")
+                    return None
+
+        except Exception as e:
+            logger.error(f"Ошибка при анализе множественных отчетов через ChatGPT: {str(e)}")
+            logger.exception("Полный стек ошибки:")
+            return None 
