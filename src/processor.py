@@ -354,25 +354,47 @@ class DocumentProcessor:
 
             # Конвертация PDF или подготовка изображения
             if file_path.suffix.lower() == '.pdf':
-                from pdf2image import convert_from_path
-                images = convert_from_path(file_path)
-                logger.info(f"PDF файл содержит {len(images)} страниц")
-                
+                try:
+                    from pdf2image import convert_from_path
+                    import utils
+                    poppler_path = utils.get_poppler_path()
+                    logger.info(f"Использую poppler_path: {poppler_path}")
+                    images = convert_from_path(file_path, poppler_path=poppler_path)
+                    logger.info(f"PDF файл содержит {len(images)} страниц")
+                except Exception as e:
+                    logger.error(f"Ошибка при конвертации PDF: {str(e)}")
+                    return None, {}
                 # Создаем отдельную папку для этого PDF файла
                 pdf_output_dir = output_dir / f"{file_path.stem}_pages"
                 pdf_output_dir.mkdir(exist_ok=True)
-                
-                # Обрабатываем каждую страницу
+                # PREDICT_IMAGE фильтрация для всех страниц
+                import sys
+                sys.path.append(str(Path(__file__).parent))
+                import predict_image
+                temp_files_for_predict = []
                 for i, image in enumerate(images):
-                    logger.info(f"Обработка страницы {i+1} из {len(images)}")
-                    
-                    # Создаем временный файл для страницы
                     temp_file = temp_dir / f"temp_{uuid.uuid4().hex[:8]}-{i+1}.jpg"
-                    temp_files.append(temp_file)
+                    temp_files_for_predict.append(temp_file)
                     image.save(str(temp_file), 'JPEG', quality=95)
                     image.close()
-                    
-                    # Обрабатываем страницу
+                # Проверяем все страницы через predict_image
+                skip_pdf = False
+                for temp_file in temp_files_for_predict:
+                    try:
+                        pred = predict_image.predict_image(str(temp_file))
+                        logger.info(f"predict_image для {temp_file}: {pred}")
+                        if pred == 0:
+                            logger.info(f"PDF {file_path} пропущен: predict_image=0 хотя бы для одной страницы ({temp_file})")
+                            skip_pdf = True
+                            break
+                    except Exception as e:
+                        logger.error(f"Ошибка при вызове predict_image: {str(e)}")
+                        skip_pdf = True
+                        break
+                if skip_pdf:
+                    return None, {}
+                # Если все страницы прошли, обрабатываем их
+                for i, temp_file in enumerate(temp_files_for_predict):
                     page_output_file = await self._process_single_page(
                         temp_file, pdf_output_dir, f"page_{i+1:03d}"
                     )
@@ -385,7 +407,19 @@ class DocumentProcessor:
                 temp_files.append(temp_file)
                 with Image.open(file_path) as img:
                     img.save(str(temp_file), 'JPEG', quality=95)
-
+                # PREDICT_IMAGE фильтрация
+                import sys
+                sys.path.append(str(Path(__file__).parent))
+                import predict_image
+                try:
+                    pred = predict_image.predict_image(str(temp_file))
+                    logger.info(f"predict_image для {temp_file}: {pred}")
+                    if pred == 0:
+                        logger.info(f"Файл {temp_file} пропущен по результату предсказания (0)")
+                        return None, {}
+                except Exception as e:
+                    logger.error(f"Ошибка при вызове predict_image: {str(e)}")
+                    return None, {}
                 # Обрабатываем одиночное изображение
                 single_output_file = await self._process_single_page(
                     temp_file, output_dir, file_path.stem
