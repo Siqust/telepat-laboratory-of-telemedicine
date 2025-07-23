@@ -400,7 +400,40 @@ class DocumentProcessor:
                     )
                     if page_output_file:
                         output_files.append(page_output_file)
-                        
+                # После деперсонализации: анализ каждой страницы отдельно и сохранение по шаблону <pdf>_<page>_<ai>.<ext>
+                if output_files:
+                    pdf_base = file_path.stem
+                    for idx, depers_file in enumerate(output_files):
+                        # DeepSeek
+                        try:
+                            deepseek_result = await self.deepseek_client.analyze_medical_report(str(depers_file))
+                            if deepseek_result:
+                                out_path = Path(f"ai-result/deepseek/{pdf_base}_{idx+1:03d}_deepseek.json")
+                                with open(out_path, 'w', encoding='utf-8') as f:
+                                    import json
+                                    json.dump(deepseek_result, f, ensure_ascii=False, indent=2)
+                                logger.info(f"DeepSeek результат сохранен: {out_path}")
+                        except Exception as e:
+                            logger.error(f"Ошибка анализа DeepSeek для {depers_file}: {str(e)}")
+                        # ChatGPT
+                        try:
+                            from chatgpt_client import ChatGPTClient
+                            chatgpt_client = ChatGPTClient()
+                            chatgpt_result = await chatgpt_client.analyze_medical_report(str(depers_file))
+                            if chatgpt_result:
+                                out_path = Path(f"ai-result/chatgpt/{pdf_base}_{idx+1:03d}_chatgpt.txt")
+                                with open(out_path, 'w', encoding='utf-8') as f:
+                                    f.write(chatgpt_result)
+                                logger.info(f"ChatGPT результат сохранен: {out_path}")
+                        except Exception as e:
+                            logger.error(f"Ошибка анализа ChatGPT для {depers_file}: {str(e)}")
+                        # GigaChat (если требуется, аналогично)
+                        # ...
+                    return str(output_files[0]), {}  # Возвращаем первый файл как основной
+                else:
+                    logger.error("Не удалось создать ни одного выходного файла")
+                    return None, {}
+
             else:
                 # Для обычных изображений
                 temp_file = temp_dir / f"temp_{uuid.uuid4().hex[:8]}.jpg"
