@@ -4,14 +4,12 @@ import shutil
 from pathlib import Path
 from loguru import logger
 from processor import DocumentProcessor
-from data_manager import DataManager
 from deepseek_client import DeepSeekClient
 from gigachat_client import GigaChatClient
 from chatgpt_client import ChatGPTClient
 import json
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 
 def setup_logging():
     """Настройка логирования для всего приложения"""
@@ -33,15 +31,11 @@ def setup_logging():
 setup_logging()
 
 
-async def process_documents(clinic_name: str, data_manager: DataManager) -> None:
+async def process_documents() -> None:
     """
     Обрабатывает все документы в директории input
-    
-    Args:
-        clinic_name: название клиники
-        data_manager: менеджер данных
     """
-    processor = await DocumentProcessor.create(data_manager=data_manager)
+    processor = await DocumentProcessor.create()
 
     # Определяем статические пути
     input_dir = Path("input")
@@ -52,7 +46,7 @@ async def process_documents(clinic_name: str, data_manager: DataManager) -> None
 
     # Получаем список всех файлов в директории
     input_files = [f for f in input_dir.iterdir() if
-                   f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.pdf')]
+                   f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp')]#, '.pdf')]
 
     if not input_files:
         logger.warning("В директории input не найдено изображений")
@@ -75,7 +69,6 @@ async def process_documents(clinic_name: str, data_manager: DataManager) -> None
                 # Сначала обрабатываем документ через DocumentProcessor
                 output_path, extracted_data = await processor.process_document(
                     file_path=str(file_path),
-                    clinic_name=clinic_name,
                     output_dir=str(output_dir)
                 )
 
@@ -170,20 +163,14 @@ async def main():
         return
 
     # Инициализируем менеджер данных
-    data_manager = DataManager(output_dir="output")
 
     # Загружаем существующие данные, если они есть
-    data_manager.load_data()
 
     try:
         # Запускаем обработку документов
-        await process_documents(
-            clinic_name="Default Clinic",
-            data_manager=data_manager
-        )
+        await process_documents()
 
         # Сохраняем все данные перед завершением
-        data_manager._save_data()
 
     except Exception as e:
         logger.error(f"Ошибка при выполнении: {str(e)}")

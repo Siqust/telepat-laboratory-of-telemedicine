@@ -5,31 +5,20 @@ import cv2
 import numpy as np
 import pytesseract
 import logging
-from data_manager import DataManager
 import uuid
 import predict_image
 import sys
 import utils
-import torch
-import stanza
-import requests
-from bs4 import BeautifulSoup
 import json
 from pathlib import Path
 from loguru import logger
 from deepseek_client import DeepSeekClient
-import asyncio
 from pdf2image import convert_from_path
-import tempfile
 import subprocess
-import win32api
-import atexit
-import shutil
 from PIL import Image
 import io
 import time
 from gigachat_client import GigaChatClient
-from pdf2image import convert_from_path
 from chatgpt_client import ChatGPTClient
 
 # Путь к локальному poppler (Windows версия)
@@ -95,16 +84,16 @@ def transliterate(text: str) -> str:
 class DocumentProcessor:
     """Класс для обработки медицинских документов"""
 
-    async def __init__(self, data_manager: DataManager):
+    async def __init__(self):
         """
         Инициализация процессора документов
 
         Args:
             data_manager: менеджер данных для сохранения результатов
         """
-        self.data_manager = data_manager
         self.deepseek_client = DeepSeekClient()
         self.gigachat_client = GigaChatClient()
+        self.chatgpt_client = ChatGPTClient()
 
         # Инициализация списков слов
         self.allowed_words = set([
@@ -166,9 +155,6 @@ class DocumentProcessor:
         await self._load_medical_terms()
         await self._load_surnames()
         await self._load_cities()
-
-        # Проверяем доступность API
-        await self.deepseek_client._check_api_availability()
 
         # Создаем временную директорию для обработки PDF
         self.temp_dir = Path('temp_pdf_images')
@@ -255,18 +241,15 @@ class DocumentProcessor:
                 logger.error(f"Ошибка при загрузке терминов из {terms_file}: {e}")
 
     @classmethod
-    async def create(cls, data_manager: DataManager) -> 'DocumentProcessor':
+    async def create(cls) -> 'DocumentProcessor':
         """
         Фабричный метод для создания экземпляра DocumentProcessor
-
-        Args:
-            data_manager: менеджер данных для сохранения результатов
 
         Returns:
             DocumentProcessor: инициализированный экземпляр процессора
         """
         processor = cls.__new__(cls)
-        await processor.__init__(data_manager)
+        await processor.__init__()
         return processor
 
     def _cleanup_temp_files(self):
@@ -306,7 +289,7 @@ class DocumentProcessor:
             except Exception as e:
                 logger.error(f"Ошибка при очистке временных файлов: {str(e)}")
 
-    async def process_document(self, file_path: str, clinic_name: str, output_dir: str) -> Tuple[str, Dict]:
+    async def process_document(self, file_path: str, output_dir: str) -> Tuple[str, Dict]:
         """Обработка документа: конвертация, распознавание текста, маскирование и сохранение"""
         # Инициализация переменных
         temp_files = []
@@ -625,8 +608,7 @@ class DocumentProcessor:
 
             # Анализ через ChatGPT
             try:
-                chatgpt_client = ChatGPTClient()
-                analysis_result = await chatgpt_client.analyze_multiple_medical_reports(
+                analysis_result = await self.chatgpt_client.analyze_multiple_medical_reports(
                     [str(f) for f in file_paths]
                 )
                 if analysis_result:
