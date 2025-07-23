@@ -58,5 +58,3 @@ def predict_image(filename):
         features = np.array([features])
     prediction = clf.predict(features)[0]
     return prediction 
-
-print(predict_image('input/7954053.jpeg'))

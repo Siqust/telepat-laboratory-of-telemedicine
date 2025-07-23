@@ -28,6 +28,8 @@ from PIL import Image
 import io
 import time
 from gigachat_client import GigaChatClient
+from rapidfuzz.distance import Levenshtein
+from concurrent.futures import ThreadPoolExecutor
 
 
 def get_short_path(path: str) -> str:
@@ -188,6 +190,40 @@ class DocumentProcessor:
         # Создаем временную директорию для обработки PDF
         self.temp_dir = Path('temp_pdf_images')
         self.temp_dir.mkdir(exist_ok=True)
+
+        self.russian_names = self._load_wordlist('src/data/russian_names.txt')
+        self.russian_surnames = self._load_wordlist('src/data/russian_surnames.txt')
+        self.russian_patronymics = self._load_wordlist('src/data/russian_patronymics.txt')
+
+    def _load_wordlist(self, path):
+        """Загружает слова из файла в set, приводит к нижнему регистру"""
+        words = set()
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    word = line.strip().lower()
+                    if word:
+                        words.add(word)
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке словаря {path}: {e}")
+        return words
+
+    def _is_russian_fio(self, word: str) -> bool:
+        w = word.strip().lower()
+        def fuzzy_match(w, word_set, max_distance_ratio=0.1):
+            for ref in word_set:
+                max_len = max(len(w), len(ref))
+                if max_len == 0:
+                    continue
+                dist = Levenshtein.distance(w, ref)
+                if dist / max_len <= max_distance_ratio:
+                    return True
+            return False
+        return (
+            fuzzy_match(w, self.russian_names, max_distance_ratio=0.3) or
+            fuzzy_match(w, self.russian_surnames, max_distance_ratio=0.3) or
+            fuzzy_match(w, self.russian_patronymics, max_distance_ratio=0.3)
+        )
 
     async def _load_surnames(self) -> None:
         """
@@ -377,8 +413,11 @@ class DocumentProcessor:
                     temp_files_for_predict.append(temp_file)
                     image.save(str(temp_file), 'JPEG', quality=95)
                     image.close()
-                # Проверяем все страницы через predict_image
+                # Восстанавливаю predict_image
                 skip_pdf = False
+                import sys
+                sys.path.append(str(Path(__file__).parent))
+                import predict_image
                 for temp_file in temp_files_for_predict:
                     try:
                         pred = predict_image.predict_image(str(temp_file))
@@ -394,6 +433,7 @@ class DocumentProcessor:
                 if skip_pdf:
                     return None, {}
                 # Если все страницы прошли, обрабатываем их
+                output_files = []
                 for i, temp_file in enumerate(temp_files_for_predict):
                     page_output_file = await self._process_single_page(
                         temp_file, pdf_output_dir, f"page_{i+1:03d}"
@@ -440,7 +480,7 @@ class DocumentProcessor:
                 temp_files.append(temp_file)
                 with Image.open(file_path) as img:
                     img.save(str(temp_file), 'JPEG', quality=95)
-                # PREDICT_IMAGE фильтрация
+                # Восстанавливаю predict_image
                 import sys
                 sys.path.append(str(Path(__file__).parent))
                 import predict_image
@@ -473,17 +513,20 @@ class DocumentProcessor:
             return None, {}
         finally:
             # Очистка временных файлов
+            logger.info(f"Очистка временных файлов: {[str(f) for f in temp_files]}")
             self._cleanup_temp_files()
             for temp_file in temp_files:
                 try:
                     if temp_file.exists():
+                        logger.info(f"Удаляю временный файл: {temp_file}")
                         temp_file.unlink()
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Ошибка при удалении временного файла {temp_file}: {str(e)}")
 
     async def _process_single_page(self, temp_file: Path, output_dir: Path, page_name: str) -> Optional[Path]:
         """Обрабатывает одну страницу документа"""
         try:
+            logger.info(f"Начинаю обработку страницы: {page_name}, temp_file: {temp_file}, output_dir: {output_dir}")
             # Читаем изображение
             with Image.open(temp_file) as pil_image:
                 max_size = 3000
@@ -494,77 +537,19 @@ class DocumentProcessor:
                 image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
             if image is None:
+                logger.error(f"Не удалось прочитать изображение: {temp_file}")
                 raise ValueError(f"Не удалось прочитать изображение: {temp_file}")
 
             # Распознавание текста
             text_data = self._recognize_text(image)
 
-            # Анализ текста и определение регионов для маскирования
+            # Анализ текста и определение регионов для маскирования (только не-ФИО)
             sensitive_regions = []
-            mask_context_active_for_line = False
-            current_line_words_data = []
-
             for i, word_data in enumerate(text_data):
                 word_text = word_data['text'].strip()
-                if not word_text:
-                    continue
-
-                # Определение новой строки
-                is_new_line = False
-                if current_line_words_data:
-                    line_break_threshold = word_data['height'] * 0.7
-                    if abs(word_data['top'] - current_line_words_data[0]['top']) > line_break_threshold:
-                        is_new_line = True
-                else:
-                    is_new_line = True
-
-                # Обработка предыдущей строки
-                if is_new_line and current_line_words_data:
-                    if mask_context_active_for_line:
-                        city_index = None
-                        for idx, wd in enumerate(current_line_words_data):
-                            clean_wd_text = re.sub(r'[.,!?;:]+$', '', wd['text'].strip()).strip()
-                            if (wd['text'] and wd['text'][0].isupper() and
-                                (clean_wd_text in self.cities_to_mask or
-                                 clean_wd_text.lower() in self.cities_to_mask)):
-                                city_index = idx
-                                break
-
-                        if city_index is not None:
-                            min_left = current_line_words_data[city_index]['left']
-                            max_right = max(r['left'] + r['width'] for r in current_line_words_data[city_index:])
-                            min_top = min(r['top'] for r in current_line_words_data[city_index:])
-                            max_bottom = max(r['top'] + r['height'] for r in current_line_words_data[city_index:])
-
-                            padding = 2
-                            min_left = max(0, min_left - padding)
-                            max_right = min(image.shape[1], max_right + padding)
-                            min_top = max(0, min_top - padding)
-                            max_bottom = min(image.shape[0], max_bottom + padding)
-
-                            sensitive_regions.append({
-                                'left': min_left,
-                                'top': min_top,
-                                'width': max_right - min_left,
-                                'height': max_bottom - min_top,
-                                'type': 'city_line',
-                                'text': ' '.join(r['text'] for r in current_line_words_data[city_index:]),
-                                'is_full_line': False
-                            })
-
-                    mask_context_active_for_line = False
-                    current_line_words_data = []
-
-                current_line_words_data.append(word_data)
-
-                # Проверяем на персональные данные
-                clean_word_text = re.sub(r'[.,!?;:]+$', '', word_text).strip()
-                
                 # Проверка на город
-                if (word_text and word_text[0].isupper() and
-                    (clean_word_text in self.cities_to_mask or
-                     clean_word_text.lower() in self.cities_to_mask)):
-                    mask_context_active_for_line = True
+                clean_word_text = re.sub(r'[.,!?;:]+$', '', word_text).strip()
+                if (word_text and word_text[0].isupper() and (clean_word_text in self.cities_to_mask or clean_word_text.lower() in self.cities_to_mask)):
                     sensitive_regions.append({
                         'left': word_data['left'],
                         'top': word_data['top'],
@@ -573,8 +558,7 @@ class DocumentProcessor:
                         'type': 'city',
                         'text': word_text
                     })
-                
-                # Проверка на персональные данные
+                # Проверка на персональные данные (номера и т.д.)
                 is_personal, data_type = self._is_numeric_personal_data(word_text)
                 if is_personal:
                     sensitive_regions.append({
@@ -585,61 +569,54 @@ class DocumentProcessor:
                         'type': data_type,
                         'text': word_text
                     })
-                
-                # Проверка на фамилии и имена
-                if not self._is_allowed_word(word_text, text_data, i):
-                    sensitive_regions.append({
-                        'left': word_data['left'],
-                        'top': word_data['top'],
-                        'width': word_data['width'],
-                        'height': word_data['height'],
-                        'type': 'personal_name',
-                        'text': word_text
-                    })
-
-            # Маскирование найденных регионов
+            # Маскирование найденных регионов (не-ФИО)
             for region in sensitive_regions:
                 try:
                     left = int(region['left'])
                     top = int(region['top'])
                     width = int(region['width'])
                     height = int(region['height'])
-                    
-                    # Проверяем корректность координат
-                    if (left >= 0 and top >= 0 and width > 0 and height > 0 and
-                        left + width <= image.shape[1] and top + height <= image.shape[0]):
-                        # Добавляем небольшой отступ
+                    if (left >= 0 and top >= 0 and width > 0 and height > 0 and left + width <= image.shape[1] and top + height <= image.shape[0]):
                         padding = 2
                         left = max(0, left - padding)
                         top = max(0, top - padding)
                         width = min(image.shape[1] - left, width + 2 * padding)
                         height = min(image.shape[0] - top, height + 2 * padding)
-                        
-                        # Маскируем регион
                         image[top:top + height, left:left + width] = 0
                 except Exception as e:
                     logger.warning(f"Ошибка при маскировании региона: {str(e)}")
+            # Windowed OCR для ФИО
+            windowed_words = self._windowed_ocr(image)
+            all_words = text_data + windowed_words
+            # Маскируем только ФИО по спискам (и fuzzy)
+            for word_data in all_words:
+                word_text = word_data['text'].strip()
+                if self._is_russian_fio(word_text):
+                    left = word_data['left']
+                    top = word_data['top']
+                    width = word_data['width']
+                    height = word_data['height']
+                    if (left >= 0 and top >= 0 and width > 0 and height > 0):
+                        image[top:top + height, left:left + width] = 0
+                        logger.info(f"Замаскировано слово из ФИО-списков (windowed OCR): {word_text} на позиции ({left},{top})")
 
             # Сохранение результата
             output_file = output_dir / f"{page_name}_depersonalized.jpg"
-            
-            # Конвертируем numpy array в PIL Image
+            logger.info(f"Пытаюсь сохранить деперсонализированный файл: {output_file}")
             pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-            # Сохраняем через PIL
             pil_image.save(str(output_file), 'JPEG', quality=100)
-            # Проверяем, что файл создался
+            import time
+            time.sleep(0.5)  # Даем системе время на запись файла
             if not output_file.exists():
+                logger.error(f'Файл не был создан: {output_file}')
                 raise RuntimeError("Файл не был создан после сохранения")
-            # Проверяем размер файла
             if output_file.stat().st_size == 0:
+                logger.error(f'Файл создан, но пустой: {output_file}')
                 raise RuntimeError("Файл создан, но пустой")
-            
-            # Закрываем изображение
             pil_image.close()
-            
             logger.info(f"Страница {page_name} успешно обработана и сохранена: {output_file}")
-            return output_file
 
+            return output_file
         except Exception as e:
             logger.error(f"Ошибка при обработке страницы {page_name}: {str(e)}")
             return None
@@ -1548,3 +1525,47 @@ class DocumentProcessor:
                 return True, personal_patterns[pattern_name]['description']
 
         return False, ""
+
+    def _windowed_ocr(self, image, window_size=(600, 150), step=100, scale=2.0):
+        h, w = image.shape[:2]
+        coords = [(x, y) for y in range(0, h - window_size[0] + 1, step)
+                          for x in range(0, w - window_size[1] + 1, step)]
+        words = []
+        def process_window(x, y):
+            crop = image[y:y+window_size[1], x:x+window_size[0]]
+            crop = cv2.resize(crop, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            local_words = []
+            try:
+                data = pytesseract.image_to_data(
+                    crop,
+                    lang='rus+eng',
+                    config='--psm 6',
+                    output_type=pytesseract.Output.DICT
+                )
+                for i in range(len(data['text'])):
+                    text = data['text'][i].strip()
+                    if text:
+                        confidence = float(data['conf'][i])
+                        if confidence < 30:
+                            continue
+                        left = int(data['left'][i] / scale) + x
+                        top = int(data['top'][i] / scale) + y
+                        width = int(data['width'][i] / scale)
+                        height = int(data['height'][i] / scale)
+                        local_words.append({
+                            'text': text,
+                            'left': left,
+                            'top': top,
+                            'width': width,
+                            'height': height,
+                            'conf': confidence,
+                            'lang': 'eng' if all(c.isascii() for c in text) else 'rus'
+                        })
+            except Exception as e:
+                logger.warning(f'Ошибка windowed OCR: {str(e)}')
+            return local_words
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for local_words in executor.map(lambda xy: process_window(*xy), coords):
+                words.extend(local_words)
+        logger.info(f'Windowed OCR: найдено {len(words)} слов')
+        return words
