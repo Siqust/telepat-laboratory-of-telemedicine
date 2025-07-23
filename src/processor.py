@@ -7,6 +7,8 @@ import pytesseract
 import logging
 from data_manager import DataManager
 import uuid
+import predict_image
+import sys
 import utils
 import torch
 import stanza
@@ -27,7 +29,8 @@ from PIL import Image
 import io
 import time
 from gigachat_client import GigaChatClient
-
+from pdf2image import convert_from_path
+from chatgpt_client import ChatGPTClient
 
 # Путь к локальному poppler (Windows версия)
 POPPLER_PATH = Path("../side-modules/poppler-24.08.0/Library/bin").absolute()
@@ -325,8 +328,6 @@ class DocumentProcessor:
             # Конвертация PDF или подготовка изображения
             if file_path.suffix.lower() == '.pdf':
                 try:
-                    from pdf2image import convert_from_path
-                    import utils
                     poppler_path = utils.get_poppler_path()
                     logger.info(f"Использую poppler_path: {poppler_path}")
                     images = convert_from_path(file_path, poppler_path=poppler_path)
@@ -338,9 +339,7 @@ class DocumentProcessor:
                 pdf_output_dir = output_dir / f"{file_path.stem}_pages"
                 pdf_output_dir.mkdir(exist_ok=True)
                 # PREDICT_IMAGE фильтрация для всех страниц
-                import sys
                 sys.path.append(str(Path(__file__).parent))
-                import predict_image
                 temp_files_for_predict = []
                 for i, image in enumerate(images):
                     temp_file = temp_dir / f"temp_{uuid.uuid4().hex[:8]}-{i + 1}.jpg"
@@ -379,9 +378,7 @@ class DocumentProcessor:
                 with Image.open(file_path) as img:
                     img.save(str(temp_file), 'JPEG', quality=95)
                 # PREDICT_IMAGE фильтрация
-                import sys
                 sys.path.append(str(Path(__file__).parent))
-                import predict_image
                 try:
                     pred = predict_image.predict_image(str(temp_file))
                     logger.info(f"predict_image для {temp_file}: {pred}")
@@ -628,7 +625,6 @@ class DocumentProcessor:
 
             # Анализ через ChatGPT
             try:
-                from chatgpt_client import ChatGPTClient
                 chatgpt_client = ChatGPTClient()
                 analysis_result = await chatgpt_client.analyze_multiple_medical_reports(
                     [str(f) for f in file_paths]
