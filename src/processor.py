@@ -20,9 +20,12 @@ import io
 import time
 from gigachat_client import GigaChatClient
 from chatgpt_client import ChatGPTClient
+import multiprocessing
+from rapidfuzz import fuzz, process
+from rapidfuzz.distance import Levenshtein
 
 # Путь к локальному poppler (Windows версия)
-POPPLER_PATH = Path("../side-modules/poppler-24.08.0/Library/bin").absolute()
+POPPLER_PATH = Path(__file__).parent.parent / "side-modules" / "poppler-24.08.0" / "Library" / "bin"
 PDFTOPPM = POPPLER_PATH / "pdftoppm.exe"
 
 # Создаем временную директорию в корне проекта
@@ -79,6 +82,38 @@ def transliterate(text: str) -> str:
     for char in text:
         result.append(TRANSLIT_DICT.get(char, char))
     return ''.join(result)
+
+
+def ocr_window(args):
+    x, y, window = args
+    import cv2
+    import pytesseract
+    scale = 2
+    window_up = cv2.resize(window, (window.shape[1]*scale, window.shape[0]*scale), interpolation=cv2.INTER_CUBIC)
+    data = pytesseract.image_to_data(
+        window_up,
+        lang='rus+eng',
+        config='--psm 6',
+        output_type=pytesseract.Output.DICT
+    )
+    words = []
+    for i in range(len(data['text'])):
+        text = data['text'][i].strip()
+        if text:
+            confidence = float(data['conf'][i])
+            if confidence < 30:
+                continue
+            word = {
+                'text': text,
+                'left': x + data['left'][i] // scale,
+                'top': y + data['top'][i] // scale,
+                'width': data['width'][i] // scale,
+                'height': data['height'][i] // scale,
+                'conf': confidence,
+                'lang': 'eng' if all(c.isascii() for c in text) else 'rus'
+            }
+            words.append(word)
+    return words
 
 
 class DocumentProcessor:
@@ -150,11 +185,32 @@ class DocumentProcessor:
         self.translit_surnames = set()  # Будет заполнено в _load_surnames
         self.cities_to_mask = set()  # Будет заполнено в _load_cities
         self.medical_terms = set()  # Будет заполнено в _load_medical_terms
+        # Загружаем города
+        self.russian_cities = set()
+        try:
+            with open('src/data/russian_cities.txt', 'r', encoding='utf-8') as f:
+                self.russian_cities = {line.strip().lower() for line in f if line.strip()}
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке russian_cities.txt: {e}")
 
         # Загрузка медицинских терминов и других данных
         await self._load_medical_terms()
         await self._load_surnames()
         await self._load_cities()
+
+        # Загружаем имена и отчества
+        self.russian_names = set()
+        self.russian_patronymics = set()
+        try:
+            with open('src/data/russian_names.txt', 'r', encoding='utf-8') as f:
+                self.russian_names = {line.strip().lower() for line in f if line.strip()}
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке russian_names.txt: {e}")
+        try:
+            with open('src/data/russian_patronymics.txt', 'r', encoding='utf-8') as f:
+                self.russian_patronymics = {line.strip().lower() for line in f if line.strip()}
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке russian_patronymics.txt: {e}")
 
         # Создаем временную директорию для обработки PDF
         self.temp_dir = Path('temp_pdf_images')
@@ -399,6 +455,20 @@ class DocumentProcessor:
                 except:
                     pass
 
+    def _is_fuzzy_match(self, word, vocab_set, max_dist_ratio=0.05):
+        # Быстрое fuzzy-сравнение: если расстояние <= 5% длины слова
+        word = word.lower()
+        if word in vocab_set:
+            return True
+        if not word or len(word) < 3:
+            return False
+        max_dist = max(1, int(len(word) * max_dist_ratio))
+        for vocab_word in vocab_set:
+            dist = Levenshtein.normalized_distance(word, vocab_word)
+            if dist <= max_dist_ratio:
+                return True
+        return False
+
     async def _process_single_page(self, temp_file: Path, output_dir: Path, page_name: str) -> Optional[Path]:
         try:
             # Читаем изображение
@@ -415,84 +485,83 @@ class DocumentProcessor:
                 raise ValueError(f"Не удалось прочитать изображение: {temp_file}")
 
             # Распознавание текста
-            text_data = self._recognize_text(image)
+            text_data = self._recognize_text_windows(image)
 
-            # Анализ текста и определение регионов для маскирования
+            # Группируем слова по строкам (top +- 10 пикселей)
+            lines = []
+            for word in text_data:
+                placed = False
+                for line in lines:
+                    if abs(word['top'] - line['top']) <= 10:
+                        line['words'].append(word)
+                        placed = True
+                        break
+                if not placed:
+                    lines.append({'top': word['top'], 'words': [word]})
+
             sensitive_regions = []
-            mask_context_active_for_line = False
-            current_line_words_data = []
-
-            for i, word_data in enumerate(text_data):
-                word_text = word_data['text'].strip()
-                if not word_text:
-                    continue
-
-                # Определение новой строки
-                is_new_line = False
-                if current_line_words_data:
-                    line_break_threshold = word_data['height'] * 0.7
-                    if abs(word_data['top'] - current_line_words_data[0]['top']) > line_break_threshold:
-                        is_new_line = True
-                else:
-                    is_new_line = True
-
-                # Обработка предыдущей строки
-                if is_new_line and current_line_words_data:
-                    if mask_context_active_for_line:
-                        city_index = None
-                        for idx, wd in enumerate(current_line_words_data):
-                            clean_wd_text = re.sub(r'[.,!?;:]+$', '', wd['text'].strip()).strip()
-                            if (wd['text'] and wd['text'][0].isupper() and
-                                    (clean_wd_text in self.cities_to_mask or
-                                     clean_wd_text.lower() in self.cities_to_mask)):
-                                city_index = idx
-                                break
-
-                        if city_index is not None:
-                            min_left = current_line_words_data[city_index]['left']
-                            max_right = max(r['left'] + r['width'] for r in current_line_words_data[city_index:])
-                            min_top = min(r['top'] for r in current_line_words_data[city_index:])
-                            max_bottom = max(r['top'] + r['height'] for r in current_line_words_data[city_index:])
-
-                            padding = 2
-                            min_left = max(0, min_left - padding)
-                            max_right = min(image.shape[1], max_right + padding)
-                            min_top = max(0, min_top - padding)
-                            max_bottom = min(image.shape[0], max_bottom + padding)
-
+            # Сначала ищем группы с городами и точками/запятыми
+            for line in lines:
+                words = line['words']
+                n = len(words)
+                for i, w in enumerate(words):
+                    if w['text'].strip().lower() in self.russian_cities:
+                        # Ищем границы группы слева
+                        left = i
+                        while left > 0 and words[left-1]['text'].strip() in {'.', ','}:
+                            left -= 1
+                        # Ищем границы группы справа
+                        right = i
+                        while right+1 < n and words[right+1]['text'].strip() in {'.', ','}:
+                            right += 1
+                        # После точки/запятой может идти слово, тоже включаем
+                        while right+1 < n and words[right+1]['text'].strip() not in {'.', ','}:
+                            right += 1
+                        # Замазываем все слова в этом диапазоне
+                        for j in range(left, right+1):
                             sensitive_regions.append({
-                                'left': min_left,
-                                'top': min_top,
-                                'width': max_right - min_left,
-                                'height': max_bottom - min_top,
-                                'type': 'city_line',
-                                'text': ' '.join(r['text'] for r in current_line_words_data[city_index:]),
-                                'is_full_line': False
+                                'left': words[j]['left'],
+                                'top': words[j]['top'],
+                                'width': words[j]['width'],
+                                'height': words[j]['height'],
+                                'type': 'city_group',
+                                'text': words[j]['text']
                             })
-
-                    mask_context_active_for_line = False
-                    current_line_words_data = []
-
-                current_line_words_data.append(word_data)
-
-                # Проверяем на персональные данные
-                clean_word_text = re.sub(r'[.,!?;:]+$', '', word_text).strip()
-
-                # Проверка на город
-                if (word_text and word_text[0].isupper() and
-                        (clean_word_text in self.cities_to_mask or
-                         clean_word_text.lower() in self.cities_to_mask)):
-                    mask_context_active_for_line = True
+            # Теперь обычная логика для остальных слов, но не маскируем то, что уже замаскировано
+            already_masked = set((r['left'], r['top'], r['width'], r['height']) for r in sensitive_regions)
+            for word_data in text_data:
+                word_text = word_data['text'].strip()
+                word_lower = word_text.lower()
+                key = (word_data['left'], word_data['top'], word_data['width'], word_data['height'])
+                if key in already_masked:
+                    continue
+                # Маскируем имена и отчества (fuzzy)
+                if self._is_fuzzy_match(word_lower, self.russian_names) or self._is_fuzzy_match(word_lower, self.russian_patronymics):
                     sensitive_regions.append({
                         'left': word_data['left'],
                         'top': word_data['top'],
                         'width': word_data['width'],
                         'height': word_data['height'],
-                        'type': 'city',
+                        'type': 'name_or_patronymic',
                         'text': word_text
                     })
-
-                # Проверка на персональные данные
+                    continue
+                # Маскируем числовые данные по новым правилам
+                digits_only = ''.join(c for c in word_text if c.isdigit())
+                if len(digits_only) <= 3:
+                    continue
+                if '.' in word_text:
+                    continue
+                if len(word_text) >= 7 and word_text.isdigit():
+                    sensitive_regions.append({
+                        'left': word_data['left'],
+                        'top': word_data['top'],
+                        'width': word_data['width'],
+                        'height': word_data['height'],
+                        'type': 'long_number',
+                        'text': word_text
+                    })
+                    continue
                 is_personal, data_type = self._is_numeric_personal_data(word_text)
                 if is_personal:
                     sensitive_regions.append({
@@ -504,17 +573,6 @@ class DocumentProcessor:
                         'text': word_text
                     })
 
-                # Проверка на фамилии и имена
-                if not self._is_allowed_word(word_text, text_data, i):
-                    sensitive_regions.append({
-                        'left': word_data['left'],
-                        'top': word_data['top'],
-                        'width': word_data['width'],
-                        'height': word_data['height'],
-                        'type': 'personal_name',
-                        'text': word_text
-                    })
-
             # Маскирование найденных регионов
             for region in sensitive_regions:
                 try:
@@ -522,18 +580,13 @@ class DocumentProcessor:
                     top = int(region['top'])
                     width = int(region['width'])
                     height = int(region['height'])
-
-                    # Проверяем корректность координат
                     if (left >= 0 and top >= 0 and width > 0 and height > 0 and
                             left + width <= image.shape[1] and top + height <= image.shape[0]):
-                        # Добавляем небольшой отступ
-                        padding = 2
+                        padding = 1
                         left = max(0, left - padding)
                         top = max(0, top - padding)
                         width = min(image.shape[1] - left, width + 2 * padding)
                         height = min(image.shape[0] - top, height + 2 * padding)
-
-                        # Маскируем регион
                         image[top:top + height, left:left + width] = 0
                 except Exception as e:
                     logger.warning(f"Ошибка при маскировании региона: {str(e)}")
@@ -683,6 +736,23 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Ошибка при распознавании текста: {str(e)}")
             raise
+
+    def _window_generator(self, image: np.ndarray, window_size=(600, 200), step=150):
+        h, w = image.shape[:2]
+        win_w, win_h = window_size
+        for y in range(0, h - win_h + 1, step):
+            for x in range(0, w - win_w + 1, step):
+                yield (x, y, image[y:y+win_h, x:x+win_w])
+
+    def _recognize_text_windows(self, image: np.ndarray) -> list:
+        windows = list(self._window_generator(image))
+        args = [(x, y, win) for (x, y, win) in windows]
+        with multiprocessing.Pool(processes=8) as pool:
+            results = pool.map(ocr_window, args)
+        all_words = []
+        for words in results:
+            all_words.extend(words)
+        return all_words
 
     def _is_allowed_word(self, word: str, text_data: List[Dict], current_index: int) -> bool:
         """

@@ -7,8 +7,8 @@ import torchvision.transforms as transforms
 import torch
 
 
-MODEL_PATH = '../models/classifier_model.joblib'
-SCALER_PATH = '../models/scaler.joblib'
+MODEL_PATH = 'models/classifier_model.joblib'
+SCALER_PATH = 'models/scaler.joblib'
 IMAGE_DIR = 'input'
 
 # Загрузка обученной модели

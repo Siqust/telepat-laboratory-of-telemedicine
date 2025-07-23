@@ -9,3 +9,5 @@ __pycache__/
 gigachat_config.txt
 chat-gpt_config.txt
 logs
+ai-result/
+temp_pdf_images
