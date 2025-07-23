@@ -6,9 +6,9 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 import torch
 
-# Пути к моделям и данным
-MODEL_PATH = 'models/classifier_model.joblib'
-SCALER_PATH = 'models/scaler.joblib'
+
+MODEL_PATH = '../models/classifier_model.joblib'
+SCALER_PATH = '../models/scaler.joblib'
 IMAGE_DIR = 'input'
 
 # Загрузка обученной модели
@@ -57,4 +57,4 @@ def predict_image(filename):
     else:
         features = np.array([features])
     prediction = clf.predict(features)[0]
-    return prediction 
+    return prediction

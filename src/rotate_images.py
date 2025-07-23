@@ -11,19 +11,6 @@ IMAGE_DIR = 'input'
 SHOW = False
 ROTATIONS_FILE = 'data/rotations.py'
 
-def resize_image(img, max_width=1400, max_height=800):
-    try:
-        height, width = img.shape[:2]
-        if width > max_width or height > max_height:
-            scale = min(max_width / width, max_height / height)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-        return img
-    except Exception as e:
-        print(f"Ошибка при масштабировании изображения: {e}")
-        return None
-
 # Функция для определения угла поворота
 def correct_image_rotation(image_input):
     try:
